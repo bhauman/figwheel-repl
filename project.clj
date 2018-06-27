@@ -1,6 +1,11 @@
-(defproject com.bhauman/figwheel-repl "0.1.4-SNAPSHOT"
+(defproject com.bhauman/figwheel-repl "0.1.4"
   :description  "Figwheel REPL provides a stable multiplexing REPL for ClojureScript"
   :url "https://github.com/bhauman/figwheel-repl"
+  :license {:name "Eclipse Public License - v 1.0"
+            :url "http://www.eclipse.org/legal/epl-v10.html"}
+  :scm {:name "git"
+        :url "https://github.com/bhauman/figwheel-repl"}
+  
   :dependencies [[org.clojure/clojure "1.8.0"]
                  [org.clojure/clojurescript "1.10.238"]
                  [ring/ring-core "1.6.3"]
@@ -9,8 +14,7 @@
                  [co.deps/ring-etag-middleware "0.2.0"]
                  [ring-cors "0.1.12"]]
 
-  :scm {:name "git"
-        :url "https://github.com/bhauman/figwheel-repl"}
+
   
   ;; for figwheel jetty server - these should probably
   :profiles {:dev {:dependencies [[ring "1.6.3"]
