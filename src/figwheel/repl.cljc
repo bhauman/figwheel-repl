@@ -1206,7 +1206,23 @@
                        (merge (select-keys repl-env [:host :port])
                               (select-keys (:ring-server-options repl-env) [:host :port])))))]
       (println "Opening URL" open-url)
-      (browse/browse-url open-url))))
+      (try
+        (browse/browse-url open-url)
+        (catch Throwable t
+          (println "Failed to open browser:" (.getMessage t)))))))
+
+(defn tear-down-server [{:keys [server]}]
+  (when-let [svr @server]
+    (reset! server nil)
+    (.stop svr)))
+
+(defn tear-down-everything-but-server [{:keys [printing-listener node-proc]}]
+  (when-let [proc @node-proc]
+    (.destroy proc)
+    #_(.waitFor proc) ;; ?
+    )
+  (when-let [listener @printing-listener]
+    (remove-listener listener)))
 
 (defrecord FigwheelReplEnv []
   cljs.repl/IJavaScriptEnv
@@ -1220,17 +1236,10 @@
     ;; load a file into all the appropriate envs
     (when-let [js-content (try (slurp url) (catch Throwable t))]
       (evaluate this js-content)))
-  (-tear-down [{:keys [server printing-listener node-proc]}]
-    ;; don't shut things down in nrepl
-    (when-let [svr @server]
-      (reset! server nil)
-      (.stop svr))
-    (when-let [proc @node-proc]
-      (.destroy proc)
-      #_(.waitFor proc) ;; ?
-      )
-    (when-let [listener @printing-listener]
-      (remove-listener listener)))
+  (-tear-down [repl-env]
+    (when-not (:prevent-server-tear-down repl-env)
+      (tear-down-server repl-env))
+    (tear-down-everything-but-server repl-env))
   cljs.repl/IReplEnvOptions
   (-repl-options [this]
     (let [main-fn (resolve 'figwheel.main/default-main)]
