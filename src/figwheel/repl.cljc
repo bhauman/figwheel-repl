@@ -1145,6 +1145,8 @@
 ;; - the connect-url needs to know, but it can use browser port
 ;; - the default index.html needs to find the main.js (it can inline it)
 
+;; XXX refactor as we need to breakdown these actions and allow
+;; the consumer to inject this behavior via a :setup-fn
 (defn setup [repl-env opts]
   (when (and
          (or (not (bound? #'*server*))
@@ -1206,11 +1208,14 @@
                        url
                        (merge (select-keys repl-env [:host :port])
                               (select-keys (:ring-server-options repl-env) [:host :port])))))]
-      (println "Opening URL" open-url)
-      (try
-        (browse/browse-url open-url)
-        (catch Throwable t
-          (println "Failed to open browser:" (.getMessage t)))))))
+      (if-let [open (:open-url-fn repl-env)]
+        (open open-url)
+        (do
+          (println "Opening URL" open-url)
+          (try
+            (browse/browse-url open-url)
+            (catch Throwable t
+              (println "Failed to open browser:" (.getMessage t)))))))))
 
 (defn tear-down-server [{:keys [server]}]
   (when-let [svr @server]
