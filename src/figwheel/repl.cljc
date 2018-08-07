@@ -632,6 +632,8 @@
   ([f]   (add-listener f f))
   ([k f] (swap! listener-set assoc k f) nil))
 (defn remove-listener [k] (swap! listener-set dissoc k) nil)
+(defn clear-listeners []
+  (reset! listener-set {}))
 
 (declare name-list)
 
