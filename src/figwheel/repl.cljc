@@ -625,12 +625,13 @@
 
 ;; end :cljs
 
-
 #?(:clj (do
 
-(defonce ^:private listener-set (atom #{}))
-(defn add-listener [f] (swap! listener-set conj f) nil)
-(defn remove-listener [f] (swap! listener-set disj f) nil)
+(defonce ^:private listener-set (atom {}))
+(defn add-listener
+  ([f]   (add-listener f f))
+  ([k f] (swap! listener-set assoc k f) nil))
+(defn remove-listener [k] (swap! listener-set dissoc k) nil)
 
 (declare name-list)
 
@@ -690,7 +691,7 @@
                (edn/read-string data)
                (catch Throwable t
                  (binding [*out* *err*] (clojure.pprint/pprint (Throwable->map t)))))]
-    (doseq [f @listener-set]
+    (doseq [[_ f] @listener-set]
       (try (f data) (catch Throwable ex)))))
 
 (defn naming-response [{:keys [session-name session-id type] :as conn}]
