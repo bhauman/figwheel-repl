@@ -353,7 +353,10 @@
             (let [result-value (js/eval code)
                   ;; the result needs to be readable
                   result-value (if-not (string? result-value)
-                                 (pr-str result-value)
+                                 (try
+                                   (pr-str result-value)
+                                   (catch js/Error e
+                                     nil))
                                  result-value)
                   output-str (str sb)]
               (when (and print-to-console? (not (zero? (.getLength sb))))
