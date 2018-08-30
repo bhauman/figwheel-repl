@@ -1132,6 +1132,44 @@
       (string/replace "[[server-hostname]]" (or host "localhost"))
       (string/replace "[[server-port]]" (str port))))
 
+(defn launch-script-helper [script
+                            repl-env
+                            {:keys [output-to output-dir target open-url output-log-file] :as data}]
+  (let [output-log-file (or (and output-log-file (io/file output-log-file))
+                            (io/file (or output-dir "out") "launch-script.log"))
+        input-data (dissoc data :output-dir :target)]
+    (if (or (symbol? script) (var? script) (fn? script))
+      ;; TODO consider logging here or let script fn handle it
+      (let [v (if (symbol? script)
+                (dynload script)
+                script)]
+        (doto (Thread. (fn [] (v input-data)))
+          (.setDaemon true)
+          (.start)))
+      (let [shell-command-vector
+            (cond
+              (coll? script)
+              (mapv (fn [x] (if (keyword? x)
+                              (get input-data x "")
+                              x)) script)
+              (string? script)
+              [script (if (= target :nodejs)
+                        output-to
+                        open-url)])]
+        (.start
+         (cond-> (ProcessBuilder. (into-array shell-command-vector))
+           output-log-file (.redirectError  (io/file output-log-file))
+           output-log-file (.redirectOutput (io/file output-log-file))))))))
+
+(defn launch-script [script repl-env {:keys [output-dir] :or {output-dir "out"} :as opts}]
+  (let [output-log-file (str (io/file output-dir "js-environment.log"))]
+    (println "Launching Javascript evironment with script: " (pr-str script))
+    (reset! (:node-proc repl-env)
+            (launch-script-helper script repl-env
+                                  (assoc opts :output-log-file output-log-file)))
+    (when (not (symbol? script))
+      (println "Environment output being logged to:" output-log-file))))
+
 (defn launch-node [opts repl-env input-path & [output-log-file]]
   (let [xs (cond-> [(get repl-env :node-command "node")]
              (:inspect-node repl-env true) (conj "--inspect")
@@ -1187,29 +1225,37 @@
       (add-listener print-listener)))
   (let [{:keys [target output-to output-dir]}
         (apply merge
-               (map #(select-keys % [:target :output-to :output-dir]) [repl-env opts]))]
-    ;; Node REPL
-    (when (and (= :nodejs target)
-               (:launch-node repl-env true)
-               output-to)
+               (map #(select-keys % [:target :output-to :output-dir]) [repl-env opts]))
+        open-url (and (:open-url repl-env)
+                      (fill-server-url-template
+                       (:open-url repl-env)
+                       (merge (select-keys repl-env [:host :port])
+                              (select-keys (:ring-server-options repl-env) [:host :port]))))]
+    (cond
+      (:launch-script repl-env)
+      (launch-script
+       (:launch-script repl-env)
+       repl-env
+       {:output-to output-to
+        :open-url open-url
+        :output-dir output-dir
+        :target target})
+      ;; Node REPL
+      (and (= :nodejs target)
+           (:launch-node repl-env true)
+           output-to)
       (let [output-file (io/file output-dir "node.log")]
         (println "Starting node ... ")
         (reset! (:node-proc repl-env) (launch-node opts repl-env output-to output-file))
-        (println "Node output being logged to:" output-file)
+        (println "Node output being logged to:" (str output-file))
         (when (:inspect-node repl-env true)
           (println "For a better development experience:")
           (println "  1. Open chrome://inspect/#devices ... (in Chrome)")
-          (println "  2. Click \"Open dedicated DevTools for Node\""))))
-
-    ;; open a url
-    (when-let [open-url
-               (and (not (= :nodejs target))
-                    (when-let [url (:open-url repl-env)]
-                      ;; TODO the host port thing needs to be fixed ealier
-                      (fill-server-url-template
-                       url
-                       (merge (select-keys repl-env [:host :port])
-                              (select-keys (:ring-server-options repl-env) [:host :port])))))]
+          (println "  2. Click \"Open dedicated DevTools for Node\"")))
+      
+      ;; open a url
+      (and (not (= :nodejs target))
+           open-url)
       (if-let [open (:open-url-fn repl-env)]
         (open open-url)
         (do
@@ -1226,7 +1272,10 @@
 
 (defn tear-down-everything-but-server [{:keys [printing-listener node-proc]}]
   (when-let [proc @node-proc]
-    (.destroy proc)
+    (if (instance? Thread proc)
+      (.stop proc)
+      (.destroy proc))
+    
     #_(.waitFor proc) ;; ?
     )
   (when-let [listener @printing-listener]
