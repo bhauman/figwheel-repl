@@ -334,17 +334,17 @@
 
 (defmethod message "ping" [msg] (respond-to msg {:pong true}))
 
-(let [ua-product-fn
-      ;; TODO make sure this works on other platforms
-      #(cond
-         (not (nil? goog/nodeGlobalRequire)) :chrome
-         product/SAFARI    :safari
-         product/CHROME    :chrome
-         product/FIREFOX   :firefox
-         product/IE        :ie)
-      print-to-console? ((print-receivers print-output) :console)]
+(defn get-ua-product []
+  (cond
+    (not (nil? goog/nodeGlobalRequire)) :chrome
+    product/SAFARI    :safari
+    product/CHROME    :chrome
+    product/FIREFOX   :firefox
+    product/IE        :ie))
+
+(let [print-to-console? ((print-receivers print-output) :console)]
   (defn eval-javascript** [code]
-    (let [ua-product (ua-product-fn)]
+    (let [ua-product (get-ua-product)]
       (try
         (let [sb (js/goog.string.StringBuffer.)]
           ;; TODO capture err as well?
@@ -1135,11 +1135,11 @@
       (string/replace "[[server-hostname]]" (or host "localhost"))
       (string/replace "[[server-port]]" (str port))))
 
-(defn launch-script-helper [script
-                            repl-env
-                            {:keys [output-to output-dir target open-url output-log-file] :as data}]
+(defn launch-js-helper [script
+                        repl-env
+                        {:keys [output-to output-dir target open-url output-log-file] :as data}]
   (let [output-log-file (or (and output-log-file (io/file output-log-file))
-                            (io/file (or output-dir "out") "launch-script.log"))
+                            (io/file (or output-dir "out") "js-environment.log"))
         input-data (dissoc data :output-dir :target)]
     (if (or (symbol? script) (var? script) (fn? script))
       ;; TODO consider logging here or let script fn handle it
@@ -1164,11 +1164,11 @@
            output-log-file (.redirectError  (io/file output-log-file))
            output-log-file (.redirectOutput (io/file output-log-file))))))))
 
-(defn launch-script [script repl-env {:keys [output-dir] :or {output-dir "out"} :as opts}]
+(defn launch-js [script repl-env {:keys [output-dir] :or {output-dir "out"} :as opts}]
   (let [output-log-file (str (io/file output-dir "js-environment.log"))]
     (println "Launching Javascript evironment with script: " (pr-str script))
     (reset! (:node-proc repl-env)
-            (launch-script-helper script repl-env
+            (launch-js-helper script repl-env
                                   (assoc opts :output-log-file output-log-file)))
     (when (not (symbol? script))
       (println "Environment output being logged to:" output-log-file))))
@@ -1235,9 +1235,9 @@
                        (merge (select-keys repl-env [:host :port])
                               (select-keys (:ring-server-options repl-env) [:host :port]))))]
     (cond
-      (:launch-script repl-env)
-      (launch-script
-       (:launch-script repl-env)
+      (:launch-js repl-env)
+      (launch-js
+       (:launch-js repl-env)
        repl-env
        {:output-to output-to
         :open-url open-url
