@@ -1266,7 +1266,16 @@
           (try
             (browse/browse-url open-url)
             (catch Throwable t
-              (println "Failed to open browser:" (.getMessage t)))))))))
+              (println "Failed to open browser:" (.getMessage t))))))
+      (and (nil? target)
+           (not (:launch-js repl-env))
+           (false? open-url))
+      (println "JavaScript environment will not launch automatically when :open-url is false")
+      (and (= :nodejs target)
+           (not (:launch-js repl-env))
+           (false? (:launch-node repl-env)))
+      (println "JavaScript environment will not launch automatically when :launch-node is false")
+      :else nil)))
 
 (defn tear-down-server [{:keys [server]}]
   (when-let [svr @server]
