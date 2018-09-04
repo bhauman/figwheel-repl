@@ -1166,7 +1166,7 @@
 
 (defn launch-js [script repl-env {:keys [output-dir] :or {output-dir "out"} :as opts}]
   (let [output-log-file (str (io/file output-dir "js-environment.log"))]
-    (println "Launching Javascript evironment with script: " (pr-str script))
+    (println "Launching Javascript environment with script: " (pr-str script))
     (reset! (:node-proc repl-env)
             (launch-js-helper script repl-env
                                   (assoc opts :output-log-file output-log-file)))
