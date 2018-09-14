@@ -20,7 +20,8 @@
              [cljs.stacktrace]
              [clojure.java.io :as io]
              [clojure.string :as string]
-             [figwheel.server.ring]]))
+             [figwheel.server.ring]
+             [figwheel.server.jetty-websocket]]))
   (:import
    #?@(:cljs [goog.net.WebSocket
               goog.debug.Console
@@ -1057,24 +1058,22 @@
           (repl-env-print repl-env :out [(string/trim-newline out)])))
       result)))
 
-(defn require-resolve [symbol-str]
-  (let [sym (symbol symbol-str)]
-    (when-let [ns (namespace sym)]
-      (try
-        (require (symbol ns))
-        (resolve sym)
-        (catch Throwable e
-          nil)))))
 
-#_(require-resolve 'figwheel.server.jetty-websocket/run-server)
 
 ;; TODO more precise error when loaded but fn doesn't exist
 (defn dynload [ns-sym-str]
-  (let [resolved (require-resolve ns-sym-str)]
-    (if resolved
-      resolved
+  (try
+    (let [sym (symbol ns-sym-str)]
+      (when-let [ns (namespace sym)]
+        (try
+          (require (symbol ns))
+          (resolve sym))))
+    (catch Throwable e
       (throw (ex-info (str "Figwheel: Unable to dynamicly load " ns-sym-str)
-                      {:not-loaded ns-sym-str})))))
+                      {:not-loaded ns-sym-str}
+                      e)))))
+
+#_(dynload "figwheel.server.jetty-websocket/run-server")
 
 ;; taken from ring server
 (defn try-port
@@ -1092,11 +1091,14 @@
 (defn run-default-server*
   [options connections]
   ;; require and run figwheel server
-  (let [server-fn (dynload (get options :ring-server
-                                'figwheel.server.jetty-websocket/run-server))
+  (let [server-fn (or (when-let [server-fn-symbol (get options :ring-server)]
+                        (dynload server-fn-symbol))
+                      figwheel.server.jetty-websocket/run-server)
         figwheel-connect-path (get options :figwheel-connect-path "/figwheel-connect")]
     (server-fn
-     ((dynload (get options :ring-stack 'figwheel.server.ring/default-stack))
+     ((or (when-let [stack-fn (get options :ring-stack)]
+            (dynload stack-fn))
+          figwheel.server.ring/default-stack)
       (:ring-handler options)
       ;; TODO this should only work for the default target of browser
       (cond-> (:ring-stack-options options)
