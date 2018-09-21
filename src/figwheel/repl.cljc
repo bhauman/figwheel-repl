@@ -1102,15 +1102,17 @@
       (:ring-handler options)
       ;; TODO this should only work for the default target of browser
       (cond-> (:ring-stack-options options)
-          (and
-           (contains? #{nil :browser} (:target options))
-           (:output-to options)
-           (not (get-in (:ring-stack-options options) [:figwheel.server.ring/dev :figwheel.server.ring/system-app-handler])))
-          (assoc-in
-           [:figwheel.server.ring/dev :figwheel.server.ring/system-app-handler]
-           #(figwheel.server.ring/default-index-html
-             %
-             (figwheel.server.ring/index-html (select-keys options [:output-to]))))))
+        (:cljsjs-resources options)
+        (assoc-in [:figwheel.server.ring/dev :figwheel.server.ring/cljsjs-resources] true)
+        (and
+         (contains? #{nil :browser} (:target options))
+         (:output-to options)
+         (not (get-in (:ring-stack-options options) [:figwheel.server.ring/dev :figwheel.server.ring/system-app-handler])))
+        (assoc-in
+         [:figwheel.server.ring/dev :figwheel.server.ring/system-app-handler]
+         #(figwheel.server.ring/default-index-html
+           %
+           (figwheel.server.ring/index-html (select-keys options [:output-to]))))))
      (assoc (get options :ring-server-options)
             :async-handlers
             {figwheel-connect-path
@@ -1204,6 +1206,7 @@
                                           :target
                                           :output-to
                                           :ring-handler
+                                          :cljsjs-resources
                                           :ring-server
                                           :ring-server-options
                                           :ring-stack

@@ -7,6 +7,7 @@
    [ring.middleware.defaults]
    [ring.middleware.head :as head]
    [ring.middleware.stacktrace]
+   [ring.middleware.resource :refer [wrap-resource]]
    [ring.middleware.not-modified :as not-modified]
    [ring.util.mime-type :as mime]
    [ring.util.response :refer [resource-response] :as response]))
@@ -241,8 +242,10 @@
                 :ring.middleware.cors/wrap-cors
                 :ring.middleware.not-modified/wrap-not-modified
                 :ring.middleware.stacktrace/wrap-stacktrace
+                ::cljsjs-resources
                 ::system-app-handler]} dev]
     (cond-> (handle-first ring-handler not-found)
+      cljsjs-resources (wrap-resource "cljsjs") ;; cljsjs resources
       (::resource-root-index dev) (resource-root-index (get-in config [:static :resources]))
       true                        (ring.middleware.defaults/wrap-defaults config)
       (dev ::fix-index-mime-type) fix-index-mime-type
@@ -272,6 +275,7 @@
       (update ::dev #(merge {::fix-index-mime-type true
                              ::resource-root-index true
                              ::wrap-no-cache true
+                             ::cljsjs-resources false
                              ;::default-index-html false
                              :ring.middleware.not-modified/wrap-not-modified true
                              :co.deps.ring-etag-middleware/wrap-file-etag true
