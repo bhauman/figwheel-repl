@@ -393,7 +393,7 @@
   (if (= host-env :html)
       (-> connect-url'
           (string/replace "[[client-hostname]]" js/location.hostname)
-          (string/replace "[[client-port]]" js/location.port))
+          (string/replace ":[[client-port]]" (if (string/blank? js/location.port) "" (str ":" js/location.port))))
       connect-url'))
 
 (defn make-url [connect-url']
@@ -1260,7 +1260,7 @@
           (println "For a better development experience:")
           (println "  1. Open chrome://inspect/#devices ... (in Chrome)")
           (println "  2. Click \"Open dedicated DevTools for Node\"")))
-      
+
       ;; open a url
       (and (not (= :nodejs target))
            open-url)
@@ -1292,7 +1292,7 @@
     (if (instance? Thread proc)
       (.stop proc)
       (.destroy proc))
-    
+
     #_(.waitFor proc) ;; ?
     )
   (when-let [listener @printing-listener]
