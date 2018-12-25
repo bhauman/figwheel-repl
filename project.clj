@@ -8,16 +8,16 @@
   
   :dependencies [[org.clojure/clojure "1.9.0"]
                  [org.clojure/clojurescript "1.10.339"]
-                 [ring/ring-core "1.7.0"]
+                 [ring/ring-core "1.7.1"]
                  [ring/ring-defaults "0.3.2"]
-                 [ring/ring-devel "1.7.0"]
+                 [ring/ring-devel "1.7.1"]
                  [co.deps/ring-etag-middleware "0.2.0"]
                  [ring-cors "0.1.12"]]
   
   ;; for figwheel jetty server - these should probably
-  :profiles {:dev {:dependencies [[ring "1.7.0"]
-                                  [org.eclipse.jetty.websocket/websocket-servlet "9.2.24.v20180105"]
-                                  [org.eclipse.jetty.websocket/websocket-server "9.2.24.v20180105"]]
+  :profiles {:dev {:dependencies [[ring "1.7.1"]
+                                  [org.eclipse.jetty.websocket/websocket-servlet "9.4.12.v20180830"]
+                                  [org.eclipse.jetty.websocket/websocket-server  "9.4.12.v20180830"]]
                    :resource-paths ["resources" "dev-resources"]}
              }
   )
