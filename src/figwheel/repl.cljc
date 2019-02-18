@@ -397,7 +397,10 @@
       connect-url'))
 
 (defn make-url [connect-url']
-  (let [uri (guri/parse (fill-url-template (or connect-url' connect-url)))]
+  (let [uri (guri/parse (fill-url-template (or connect-url' connect-url)))
+        domain (.getDomain uri)]
+    (when (string/ends-with? domain ":")
+      (.setDomain uri (subs domain 0 (dec (count domain)))))
     (cond-> (.add (.getQueryData uri) "fwsid" (or (session-id) (random-uuid)))
       (session-name) (.add "fwsname" (session-name)))
     uri))
