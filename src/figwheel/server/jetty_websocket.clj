@@ -17,8 +17,8 @@
    [org.eclipse.jetty.websocket.servlet
     WebSocketServletFactory WebSocketCreator
     ServletUpgradeRequest ServletUpgradeResponse]
-   [org.eclipse.jetty.util.log Log StdErrLog]
-   ))
+   [org.eclipse.jetty.util.log Log StdErrLog]))
+
 
 ;; ------------------------------------------------------
 ;; Jetty 9 Websockets
@@ -61,12 +61,15 @@
 (defn proxy-ws-handler
   "Returns a Jetty websocket handler"
   [{:as ws-fns
-    :keys [ws-max-idle-time]
-    :or {ws-max-idle-time (* 7 24 60 60 1000)}}] ;; a week long timeout
+    :keys [ws-max-idle-time ws-max-msg-size]
+    :or {ws-max-idle-time (* 7 24 60 60 1000) ;; a week long timeout
+         ws-max-msg-size (* 16 1024 1024)}}] ;; 16MB
   (proxy [WebSocketHandler] []
     (configure [^WebSocketServletFactory factory]
-      (-> (.getPolicy factory)
-          (.setIdleTimeout ws-max-idle-time))
+      (doto (.getPolicy factory)
+            (.setIdleTimeout ws-max-idle-time)
+            (.setMaxTextMessageSize ws-max-msg-size)
+            (.setMaxBinaryMessageSize ws-max-msg-size))
       (.setCreator factory (reify-default-ws-creator ws-fns)))
     (handle [^String target, ^Request request req res]
       (let [wsf (proxy-super getWebSocketFactory)]
@@ -190,8 +193,8 @@
 
 (comment
   (defonce scratch (atom {}))
-  (-> @scratch :adaptor (.. getSession getUpgradeRequest) build-request-map)
-  )
+  (-> @scratch :adaptor (.. getSession getUpgradeRequest) build-request-map))
+
 
 
 
@@ -207,10 +210,10 @@
                                    (swap! scratch assoc :adaptor3 ring-request)
                                    (send {:status 200
                                           :headers {"Content-Type" "text/html"}
-                                          :body "Wowza"})
-                                   )}
+                                          :body "Wowza"}))}
+
                 :websockets {"/" {:on-connect (fn [adapt]
-                                                (swap! scratch assoc :adaptor2 adapt ))}}
-                #_:configurator #_(websocket-configurator )}))
+                                                (swap! scratch assoc :adaptor2 adapt))}}
+                #_:configurator #_(websocket-configurator)}))
 
 #_(.stop server)
