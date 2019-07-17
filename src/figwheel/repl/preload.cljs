@@ -1,6 +1,6 @@
 (ns figwheel.repl.preload
   (:require [figwheel.repl :as fr]))
 
-(if (= fr/host-env :html)
+(if (and (= fr/host-env :html) (not= (. js/document -readyState) "complete"))
   (.addEventListener goog.global "load" #(fr/connect))
   (fr/connect))
