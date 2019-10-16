@@ -132,14 +132,14 @@
      (assoc options :configurator
             (fn [server]
               (set-log-level! log-level)
-              (configurator server)
+              (when (symbol? configurator) ((resolve configurator) server))
               ((async-websocket-configurator
                 (select-keys options [:websockets :async-handlers])) server)))
      (assoc options
             :configurator
             (fn [server]
               (set-log-level! log-level)
-              (configurator server))))))
+              (when (symbol? configurator) ((resolve configurator) server)))))))
 
 ;; Figwheel REPL adapter
 
