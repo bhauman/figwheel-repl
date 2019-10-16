@@ -125,19 +125,21 @@
       (.setHandler server contexts)
       server)))
 
-(defn run-jetty [handler {:keys [websockets async-handlers log-level] :as options}]
+(defn run-jetty [handler {:keys [websockets async-handlers log-level configurator] :as options}]
   (jt/run-jetty
    handler
    (if (or (not-empty websockets) (not-empty async-handlers))
      (assoc options :configurator
             (fn [server]
               (set-log-level! log-level)
+              (configurator server)
               ((async-websocket-configurator
                 (select-keys options [:websockets :async-handlers])) server)))
      (assoc options
             :configurator
             (fn [server]
-              (set-log-level! log-level))))))
+              (set-log-level! log-level)
+              (configurator server))))))
 
 ;; Figwheel REPL adapter
 
