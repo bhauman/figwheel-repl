@@ -1304,7 +1304,6 @@
 (defrecord FigwheelReplEnv []
   cljs.repl/IJavaScriptEnv
   (-setup [this opts]
-    (reset! (:repl-options this) opts)
     (setup this opts)
     #_(wait-for-connection this))
   (-evaluate [this _ _  js]
@@ -1321,27 +1320,25 @@
   cljs.repl/IReplEnvOptions
   (-repl-options [this]
     (let [main-fn (resolve 'figwheel.main/default-main)]
-      (cond-> (merge
-               @(:repl-options this)
-               {;:browser-repl true
-                :preloads '[[figwheel.repl.preload]]
-                :cljs.cli/commands
-                {:groups {::repl {:desc "Figwheel REPL options"}}
-                 :init
-                 {["-H" "--host"]
-                  {:group ::repl :fn #(assoc-in %1 [:repl-env-options :host] %2)
-                   :arg "address"
-                   :doc "Address to bind"}
-                  ["-p" "--port"]
-                  {:group ::repl :fn #(assoc-in %1 [:repl-env-options :port] (Integer/parseInt %2))
-                   :arg "number"
-                   :doc "Port to bind"}
-                  ["-rh" "--ring-handler"]
-                  {:group ::repl :fn #(assoc-in %1 [:repl-env-options :ring-handler]
-                                                (when %2
-                                                  (dynload %2)))
-                   :arg "string"
-                   :doc "Ring Handler for default REPL server EX. \"example.server/handler\" "}}}})
+      (cond-> {;:browser-repl true
+               :preloads '[[figwheel.repl.preload]]
+               :cljs.cli/commands
+               {:groups {::repl {:desc "Figwheel REPL options"}}
+                :init
+                {["-H" "--host"]
+                 {:group ::repl :fn #(assoc-in %1 [:repl-env-options :host] %2)
+                  :arg "address"
+                  :doc "Address to bind"}
+                 ["-p" "--port"]
+                 {:group ::repl :fn #(assoc-in %1 [:repl-env-options :port] (Integer/parseInt %2))
+                  :arg "number"
+                  :doc "Port to bind"}
+                 ["-rh" "--ring-handler"]
+                 {:group ::repl :fn #(assoc-in %1 [:repl-env-options :ring-handler]
+                                               (when %2
+                                                 (dynload %2)))
+                  :arg "string"
+                  :doc "Ring Handler for default REPL server EX. \"example.server/handler\" "}}}}
         main-fn (assoc :cljs.cli/main @main-fn))))
   cljs.repl/IParseStacktrace
   (-parse-stacktrace [this st err opts]
@@ -1354,7 +1351,6 @@
   (merge (FigwheelReplEnv.)
          ;; TODO move to one atom
          {:server (atom nil)
-          :repl-options (atom nil)
           :printing-listener (atom nil)
           :bound-printer (atom nil)
           :open-url open-url
