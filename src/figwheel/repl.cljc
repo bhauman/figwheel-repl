@@ -1189,6 +1189,12 @@
                output-log-file (.redirectOutput (io/file output-log-file)))]
     (.start proc)))
 
+(defn launch-browser [open-url]
+  (try
+    (browse/browse-url open-url)
+    (catch Throwable t
+      (println "Failed to open browser:" (.getMessage t)))))
+
 ;; when doing a port search
 ;; - what needs to know the port afterwards?
 ;; - auto open the browser, this is easy enough.
@@ -1271,10 +1277,14 @@
         (open open-url)
         (do
           (println "Opening URL" open-url)
-          (try
-            (browse/browse-url open-url)
-            (catch Throwable t
-              (println "Failed to open browser:" (.getMessage t))))))
+          (if-let [wait-ms (:open-url-wait-ms repl-env)]
+            (doto (Thread.
+                   (fn []
+                     (Thread/sleep wait-ms)
+                     (launch-browser open-url)))
+              (.setDaemon true)
+              (.start))
+            (launch-browser open-url))))
       (and (nil? target)
            (not (:launch-js repl-env))
            (false? open-url))
