@@ -125,19 +125,35 @@
       (.setHandler server contexts)
       server)))
 
-(defn run-jetty [handler {:keys [websockets async-handlers log-level] :as options}]
-  (jt/run-jetty
-   handler
-   (if (or (not-empty websockets) (not-empty async-handlers))
-     (assoc options :configurator
-            (fn [server]
-              (set-log-level! log-level)
-              ((async-websocket-configurator
-                (select-keys options [:websockets :async-handlers])) server)))
-     (assoc options
-            :configurator
-            (fn [server]
-              (set-log-level! log-level))))))
+(defn run-jetty [handler {:keys [websockets async-handlers log-level
+                                 configurator] :as options}]
+  (let [configurator'
+        (if-let [config-fn
+                 (and (symbol? configurator)
+                      (try
+                        (resolve configurator)
+                        (catch Throwable t
+                          )))]
+          config-fn
+          (do
+            (when configurator
+              (println "Unable to resolve Jetty :configurator"
+                       (pr-str configurator)))
+            identity))]
+    (jt/run-jetty
+     handler
+     (if (or (not-empty websockets) (not-empty async-handlers))
+       (assoc options :configurator
+              (fn [server]
+                (set-log-level! log-level)
+                (configurator' server)
+                ((async-websocket-configurator
+                  (select-keys options [:websockets :async-handlers])) server)))
+       (assoc options
+              :configurator
+              (fn [server]
+                (configurator' server)
+                (set-log-level! log-level)))))))
 
 ;; Figwheel REPL adapter
 
@@ -195,9 +211,6 @@
   (defonce scratch (atom {}))
   (-> @scratch :adaptor (.. getSession getUpgradeRequest) build-request-map))
 
-
-
-
 #_(def server (run-jetty
                (fn [ring-request]
                  {:status 200
@@ -205,15 +218,15 @@
                   :body "Received Yep"})
                {:port 9500
                 :join? false
-                :async-handlers {"/figwheel-connect"
+                #_:async-handlers #_{"/figwheel-connect"
                                  (fn [ring-request send err]
                                    (swap! scratch assoc :adaptor3 ring-request)
                                    (send {:status 200
                                           :headers {"Content-Type" "text/html"}
                                           :body "Wowza"}))}
 
-                :websockets {"/" {:on-connect (fn [adapt]
+                #_:websockets #_{"/" {:on-connect (fn [adapt]
                                                 (swap! scratch assoc :adaptor2 adapt))}}
-                #_:configurator #_(websocket-configurator)}))
+                :configurator 'figwheel.server.jetty-websocket/sample-configurator}))
 
 #_(.stop server)
