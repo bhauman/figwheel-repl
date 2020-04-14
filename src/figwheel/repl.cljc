@@ -607,8 +607,9 @@
     (do
       (.setLevel logger' lvl)
       (debug (str "setting log level to " level)))
-    (glog/warning (str "Log level " (pr-str level) " doesn't exist must be one of "
-                    (pr-str '("severe" "warning" "info" "config" "fine" "finer" "finest"))))))
+    (glog/warning logger'
+                  (str "Log level " (pr-str level) " doesn't exist must be one of "
+                       (pr-str '("severe" "warning" "info" "config" "fine" "finer" "finest"))))))
 
 (defn init-log-level! []
   (doseq [logger' (cond-> [logger]
@@ -1277,7 +1278,7 @@
         (open open-url)
         (do
           (println "Opening URL" open-url)
-          (if-let [wait-ms (:open-url-wait-ms repl-env)]
+          (if-let [wait-ms (:open-url-wait-ms repl-env 1500)]
             (doto (Thread.
                    (fn []
                      (Thread/sleep wait-ms)
