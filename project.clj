@@ -1,4 +1,4 @@
-(defproject com.bhauman/figwheel-repl "0.2.4"
+(defproject com.bhauman/figwheel-repl "0.2.5-SNAPSHOT"
   :description  "Figwheel REPL provides a stable multiplexing REPL for ClojureScript"
   :url "https://github.com/bhauman/figwheel-repl"
   :license {:name "Eclipse Public License - v 1.0"
