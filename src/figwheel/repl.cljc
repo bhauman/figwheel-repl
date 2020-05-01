@@ -78,10 +78,14 @@
 (declare queued-file-reload)
 
 (defn unprovide! [ns]
-  (let [path (gobj/get js/goog.dependencies_.nameToPath ns)]
-    (gobj/remove js/goog.dependencies_.visited path)
-    (gobj/remove js/goog.dependencies_.written path)
-    (gobj/remove js/goog.dependencies_.written (str js/goog.basePath path))))
+  (if (some? goog/debugLoader_)
+    (let [path (.getPathFromDeps_ goog/debugLoader_ ns)]
+      (gobj/remove (.-written_ goog/debugLoader_) path)
+      (gobj/remove (.-written_ goog/debugLoader_) (str js/goog.basePath path)))
+    (let [path (gobj/get js/goog.dependencies_.nameToPath ns)]
+      (gobj/remove js/goog.dependencies_.visited path)
+      (gobj/remove js/goog.dependencies_.written path)
+      (gobj/remove js/goog.dependencies_.written (str js/goog.basePath path)))))
 
 ;; this will not work unless bootstrap has been called
 (defn figwheel-require [src reload]
