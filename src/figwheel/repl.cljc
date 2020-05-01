@@ -314,10 +314,11 @@
                   (.write post-data)
                   (.end))))))
     (fn [url response]
-      (xhrio/send url
-                  (fn [e] (debug "Response Posted"))
-                  "POST"
-                  response))))
+      (js/goog.net.Xhrio.send
+       url
+       (fn [e] (debug "Response Posted"))
+       "POST"
+       response))))
 
 (defn respond-to [{:keys [websocket http-url] :as old-msg} response-body]
   (let [response (response-for old-msg response-body)]
@@ -517,7 +518,7 @@
     (fn [url]
       (Promise.
        (fn [succ err]
-         (xhrio/send
+         (js/goog.net.Xhrio.send
           url
           (fn [e]
             (let [xhr (gobj/get e "target")]
