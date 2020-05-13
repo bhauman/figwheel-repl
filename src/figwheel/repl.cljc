@@ -1113,8 +1113,9 @@
       (cond-> (:ring-stack-options options)
         (:cljsjs-resources options)
         (assoc-in [:figwheel.server.ring/dev :figwheel.server.ring/cljsjs-resources] true)
+        ;; do we need a default index?
         (and
-         (contains? #{nil :browser} (:target options))
+         (contains? #{nil :browser :bundle} (:target options))
          (:output-to options)
          (not (get-in (:ring-stack-options options) [:figwheel.server.ring/dev :figwheel.server.ring/system-app-handler])))
         (assoc-in
@@ -1215,7 +1216,11 @@
              (nil? *server*))
          (nil? @(:server repl-env)))
     (let [server (run-default-server
+                  ;; this strange merging order is to ensure that the repl-env
+                  ;; :target is prefered as it can be :bundle when the opts :target
+                  ;; is :nodejs
                   (merge
+                   (select-keys opts [:target])
                    (select-keys repl-env [:port
                                           :host
                                           :target
@@ -1226,8 +1231,7 @@
                                           :ring-server-options
                                           :ring-stack
                                           :ring-stack-options])
-                   (select-keys opts [:target
-                                      :output-to]))
+                   (select-keys opts [:output-to]))
                   *connections*)]
       (reset! (:server repl-env) server)))
   ;; printing
@@ -1246,9 +1250,11 @@
                         (repl-env-print repl-env stream args))))))))]
       (reset! (:printing-listener repl-env) print-listener)
       (add-listener print-listener)))
-  (let [{:keys [target output-to output-dir]}
+  ;; have to get target from repl-env because it holds the original target
+  (let [target (get repl-env :target)
+        {:keys [output-to output-dir]}
         (apply merge
-               (map #(select-keys % [:target :output-to :output-dir]) [repl-env opts]))
+               (map #(select-keys % [:output-to :output-dir]) [repl-env opts]))
         open-url (and (:open-url repl-env)
                       (fill-server-url-template
                        (:open-url repl-env)
