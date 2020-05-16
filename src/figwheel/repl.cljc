@@ -216,7 +216,8 @@
   ([url opt-source-text]
    ;; guard against reloading goog/base.js
    ;; as it will blow away import figwheel reloading hooks
-   (when-not (string/ends-with? url "goog/base.js")
+   (if (string/ends-with? url "goog/base.js")
+     true
      (when-let [next-promise-fn
                 (cond opt-source-text
                       #(.then %
