@@ -214,25 +214,28 @@
 (defn queued-file-reload
   ([url] (queued-file-reload url nil))
   ([url opt-source-text]
-   (when-let [next-promise-fn
-              (cond opt-source-text
-                #(.then %
-                        (fn [_]
-                          (Promise.
-                           (fn [r _]
-                             (try (js/eval opt-source-text)
-                                  (catch js/Error e
-                                    (glog/error logger e)))
-                             (r true)))))
-                url
-                #(.then %
-                        (fn [_]
-                          (Promise.
-                           (fn [r _]
-                             (reload-file {:request-url url}
-                                          (fn [file-msg]
-                                            (r true))))))))]
-     (swap! reload-promise-chain next-promise-fn))))
+   ;; guard against reloading goog/base.js
+   ;; as it will blow away import figwheel reloading hooks
+   (when-not (string/ends-with? url "goog/base.js")
+     (when-let [next-promise-fn
+                (cond opt-source-text
+                      #(.then %
+                              (fn [_]
+                                (Promise.
+                                 (fn [r _]
+                                   (try (js/eval opt-source-text)
+                                        (catch js/Error e
+                                          (glog/error logger e)))
+                                   (r true)))))
+                      url
+                      #(.then %
+                              (fn [_]
+                                (Promise.
+                                 (fn [r _]
+                                   (reload-file {:request-url url}
+                                                (fn [file-msg]
+                                                  (r true))))))))]
+       (swap! reload-promise-chain next-promise-fn)))))
 
 (defn ^:export after-reloads [f]
   (swap! reload-promise-chain #(.then % f)))
