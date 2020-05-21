@@ -1224,7 +1224,7 @@
                   ;; :target is prefered as it can be :bundle when the opts :target
                   ;; is :nodejs
                   (merge
-                   (select-keys opts [:target])
+                   (select-keys opts [:target :output-to])
                    (select-keys repl-env [:port
                                           :host
                                           :target
@@ -1234,8 +1234,7 @@
                                           :ring-server
                                           :ring-server-options
                                           :ring-stack
-                                          :ring-stack-options])
-                   (select-keys opts [:output-to]))
+                                          :ring-stack-options]))
                   *connections*)]
       (reset! (:server repl-env) server)))
   ;; printing
@@ -1258,7 +1257,7 @@
   (let [target (get repl-env :target)
         {:keys [output-to output-dir]}
         (apply merge
-               (map #(select-keys % [:output-to :output-dir]) [repl-env opts]))
+               (map #(select-keys % [:output-to :output-dir]) [opts repl-env]))
         open-url (and (:open-url repl-env)
                       (fill-server-url-template
                        (:open-url repl-env)
