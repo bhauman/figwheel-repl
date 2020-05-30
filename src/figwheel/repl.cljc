@@ -1364,6 +1364,7 @@
                                                  (dynload %2)))
                   :arg "string"
                   :doc "Ring Handler for default REPL server EX. \"example.server/handler\" "}}}}
+        (:output-dir this) (assoc :output-dir (:output-dir this))
         main-fn (assoc :cljs.cli/main @main-fn))))
   cljs.repl/IParseStacktrace
   (-parse-stacktrace [this st err opts]
