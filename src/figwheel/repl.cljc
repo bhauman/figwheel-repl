@@ -318,7 +318,7 @@
                   (.write post-data)
                   (.end))))))
     (fn [url response]
-      (js/goog.net.Xhrio.send
+      (js/goog.net.XhrIo.send
        url
        (fn [e] (debug "Response Posted"))
        "POST"
@@ -522,7 +522,7 @@
     (fn [url]
       (Promise.
        (fn [succ err]
-         (js/goog.net.Xhrio.send
+         (js/goog.net.XhrIo.send
           url
           (fn [e]
             (let [xhr (gobj/get e "target")]
