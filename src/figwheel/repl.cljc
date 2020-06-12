@@ -33,6 +33,7 @@
              [java.lang ProcessBuilder Process]])))
 
 (def default-port 9500)
+(def default-ssl-port 9533)
 
 #?(:cljs (do
 
