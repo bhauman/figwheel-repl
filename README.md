@@ -3,8 +3,6 @@
 Figwheel-REPL is intended to provide a best of class `repl-env` for
 ClojureScript.
 
-> Currently a work in progress.
-
 Figwheel-REPL is **only** a ClojureScript `repl-env` and doesn't do anything
 specific to help with automatic file reloading. As such, it is more
 similar to Weasel in function than to Figwheel.
