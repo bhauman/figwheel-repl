@@ -15,9 +15,9 @@
                  [ring-cors "0.1.12"]]
   
   ;; for figwheel jetty server - these should probably
-  :profiles {:dev {:dependencies [[ring "1.7.1"]
-                                  [org.eclipse.jetty.websocket/websocket-servlet "9.4.12.v20180830"]
-                                  [org.eclipse.jetty.websocket/websocket-server  "9.4.12.v20180830"]]
+  :profiles {:dev {:dependencies [[ring "1.8.1"]
+                                  [org.eclipse.jetty.websocket/websocket-servlet "9.4.28.v20200408"]
+                                  [org.eclipse.jetty.websocket/websocket-server  "9.4.28.v20200408"]                                  ]
                    :resource-paths ["resources" "dev-resources"]}
              }
   )
