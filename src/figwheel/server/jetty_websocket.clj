@@ -113,7 +113,12 @@
                    (meta async-handler)]
                (doto (ContextHandler. context-path)
                  (.setAllowNullPathInfo allow-null-path-info)
-                 (.setHandler (#'jt/async-proxy-handler async-handler async-timeout)))))
+                 ;; there was a change in async-proxy-handler as of ring 1.9.0
+                 (.setHandler (try
+                                (#'jt/async-proxy-handler async-handler async-timeout nil)
+                                ;; TODO remove this in a few releases say after 0.2.15
+                                (catch clojure.lang.ArityException e
+                                  (#'jt/async-proxy-handler async-handler async-timeout)))))))
            async-handlers)
           contexts (doto (HandlerList.)
                      (.setHandlers

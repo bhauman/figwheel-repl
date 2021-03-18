@@ -1,12 +1,13 @@
 {:deps {org.clojure/clojure {:mvn/version "1.9.0"}
         org.clojure/clojurescript {:mvn/version "1.10.339"}
-        ring/ring-core {:mvn/version "1.7.1"}
+        ring/ring-core {:mvn/version "1.9.1"}
         ring/ring-defaults {:mvn/version "0.3.2"}
-        co.deps/ring-etag-middleware {:mvn/version "0.2.0"}
-        ring/ring-devel {:mvn/version "1.7.1"}
-        ring-cors {:mvn/version "0.1.12"}}
+        co.deps/ring-etag-middleware {:mvn/version "0.2.1"}
+        ring/ring-devel {:mvn/version "1.9.1"}
+        ring-cors/ring-cors {:mvn/version "0.1.13"}}
  :aliases
  {:dev {:extra-deps
-        {ring {:mvn/version "1.8.1"}
-         org.eclipse.jetty.websocket/websocket-servlet {:mvn/version "9.4.28.v20200408"}
-         org.eclipse.jetty.websocket/websocket-server {:mvn/version "9.4.28.v20200408"}}}}}
+        {ring {:mvn/version "1.9.1"}
+         org.eclipse.jetty.websocket/websocket-servlet {:mvn/version "9.4.36.v20210114"}
+         org.eclipse.jetty.websocket/websocket-server {:mvn/version "9.4.36.v20210114"}
+         }}}}
