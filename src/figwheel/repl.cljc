@@ -49,7 +49,32 @@
 ;; set level (.setLevel logger goog.debug.Logger.Level.INFO)
 ;; disable   (.setCapturing log-console false)
 
-(defonce logger (glog/getLogger "Figwheel REPL"))
+(defn version-value [v]
+  (try
+    (->> (string/split v #"[^\d]")
+         (take 3)
+         (map #(js/parseInt %))
+         (map * [100000000000 10000 1])
+         (reduce +))
+    (catch js/Error e
+      (* 100000000000 100))))
+
+(defonce logger
+  (if (>= (version-value *clojurescript-version*) (version-value "1.10.844"))
+    (goog.debug.Logger. "Figwheel REPL")
+    (.call glog/getLogger nil "Figwheel REPL")))
+
+(defn glog-error [log msg-ex]
+  (.call glog/error nil log msg-ex))
+
+(defn glog-fine [log msg]
+  (.call glog/fine nil log msg))
+
+(defn glog-info [log msg]
+  (.call glog/info nil log msg))
+
+(defn glog-warning [log msg]
+  (.call glog/warning nil log msg))
 
 (defn ^:export console-logging []
   (when-not (gobj/get goog.debug.Console "instance")
@@ -67,7 +92,7 @@
 (defonce log-console (console-logging))
 
 (defn debug [msg]
-  (glog/log logger goog.debug.Logger.Level.FINEST msg))
+  (.call glog/log nil logger goog.debug.Logger.Level.FINEST msg))
 
 ;; TODO dev
 #_(.setLevel logger goog.debug.Logger.Level.FINEST)
@@ -150,8 +175,8 @@
               (do (.importScripts js/self (add-cache-buster request-url))
                   true)
               (catch js/Error e
-                (glog/error logger (str  "Figwheel: Error loading file " request-url))
-                (glog/error logger e)
+                (glog-error logger (str  "Figwheel: Error loading file " request-url))
+                (glog-error logger e)
                 false))))
 
 (defn ^:export create-node-script-import-fn []
@@ -170,8 +195,8 @@
         (callback (try
                     (js/require cache-path)
                     (catch js/Error e
-                      (glog/error logger (str  "Figwheel: Error loading file " cache-path))
-                      (glog/error logger e)
+                      (glog-error logger (str  "Figwheel: Error loading file " cache-path))
+                      (glog-error logger e)
                       false)))))))
 
 (def host-env
@@ -197,16 +222,16 @@
 ;; TODO Should just leverage the import script here somehow
 (defn reload-file [{:keys [request-url] :as file-msg} callback]
   {:pre [(string? request-url) (not (nil? callback))]}
-  (glog/fine logger (str "Attempting to load " request-url))
+  (glog-fine logger (str "Attempting to load " request-url))
   ((or (gobj/get goog.global "FIGWHEEL_IMPORT_SCRIPT") reload-file*)
    request-url
    (fn [success?]
      (if success?
        (do
-         (glog/fine logger (str "Successfully loaded " request-url))
+         (glog-fine logger (str "Successfully loaded " request-url))
          (apply callback [(assoc file-msg :loaded-file true)]))
        (do
-         (glog/error logger (str  "Error loading file " request-url))
+         (glog-error logger (str  "Error loading file " request-url))
          (apply callback [file-msg]))))))
 
 ;; for goog.require consumption
@@ -227,7 +252,7 @@
                                  (fn [r _]
                                    (try (js/eval opt-source-text)
                                         (catch js/Error e
-                                          (glog/error logger e)))
+                                          (glog-error logger e)))
                                    (r true)))))
                       url
                       #(.then %
@@ -340,8 +365,8 @@
 (defmethod message "naming" [msg]
   (when-let [sn  (:session-name msg)] (set-state ::session-name sn))
   (when-let [sid (:session-id msg)]   (set-state ::session-id sid))
-  (glog/info logger (str "Session ID: "   (session-id)))
-  (glog/info logger (str "Session Name: " (session-name))))
+  (glog-info logger (str "Session ID: "   (session-id)))
+  (glog-info logger (str "Session Name: " (session-name))))
 
 (defmethod message "ping" [msg] (respond-to msg {:pong true}))
 
@@ -467,7 +492,7 @@
         (thunk)
         (gobj/set goog.global "WebSocket" nil))
       (do
-        (glog/error
+        (glog-error
          logger
          (if (= host-env :node)
            "Can't connect!! Please make sure ws is installed\n do -> 'npm install ws'"
@@ -488,7 +513,7 @@
                                              (js->clj (js/JSON.parse msg) :keywordize-keys true)
                                              :websocket websocket))
                                    (catch js/Error e
-                                     (glog/error logger e))))))
+                                     (glog-error logger e))))))
           (.addEventListener goog.net.WebSocket.EventType.OPENED
                              (fn [e]
                                (connection-established! url)
@@ -560,13 +585,13 @@
                    (message (assoc (js->clj msg :keywordize-keys true)
                                    :http-url surl))
                    (catch js/Error e
-                     (glog/error logger e))))]
+                     (glog-error logger e))))]
     (doto (.getQueryData url)
       (.add "fwinit" "true"))
     (.then (http-get url)
            (fn [msg]
              (let [typ (gobj/get msg "connection-type")]
-               (glog/info logger (str "Connected: " typ))
+               (glog-info logger (str "Connected: " typ))
                (msg-fn msg)
                (connection-established! url)
                ;; after connecting setup printing redirects
@@ -577,11 +602,11 @@
                  (poll msg-fn connect-url'))))
            (fn [e];; didn't connect
              (when (instance? js/Error e)
-               (glog/error logger e))
+               (glog-error logger e))
              (when (and (instance? goog.net.XhrIo e) (.getResponseBody e))
                (debug (.getResponseBody e)))
              (let [wait-time (exponential-backoff attempt)]
-               (glog/info logger (str "HTTP Connection Error: next connection attempt in " (/ wait-time 1000) " seconds"))
+               (glog-info logger (str "HTTP Connection Error: next connection attempt in " (/ wait-time 1000) " seconds"))
                (js/setTimeout #(http-connect* (inc attempt) connect-url')
                               wait-time))))))
 
@@ -593,7 +618,7 @@
           (get-websocket-class))
     url
     (do
-      (glog/warning
+      (glog-warning
        logger
        (str
         "No WebSocket implementation found! Falling back to http-long-polling"
@@ -617,7 +642,7 @@
     (do
       (.setLevel logger' lvl)
       (debug (str "setting log level to " level)))
-    (glog/warning logger'
+    (glog-warning logger'
                   (str "Log level " (pr-str level) " doesn't exist must be one of "
                        (pr-str '("severe" "warning" "info" "config" "fine" "finer" "finest"))))))
 
