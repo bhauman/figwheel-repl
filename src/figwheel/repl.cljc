@@ -1,13 +1,13 @@
 (ns figwheel.repl
   (:require
    [clojure.string :as string]
-   #?@(:cljs [[goog.object :as gobj]
+   #?@(:cljs [[figwheel.repl.logging :as log]
+              [goog.object :as gobj]
               [goog.storage.mechanism.mechanismfactory :as storage-factory]
               [goog.Uri :as guri]
               [goog.string :as gstring]
               [goog.net.jsloader :as loader]
               [goog.net.XhrIo :as xhrio]
-              [goog.log :as glog]
               [goog.array :as garray]
               [goog.json :as gjson]
               [goog.html.legacyconversions :as conv]
@@ -49,50 +49,14 @@
 ;; set level (.setLevel logger goog.debug.Logger.Level.INFO)
 ;; disable   (.setCapturing log-console false)
 
-(defn version-value [v]
-  (try
-    (->> (string/split v #"[^\d]")
-         (take 3)
-         (map #(js/parseInt %))
-         (map * [100000000000 10000 1])
-         (reduce +))
-    (catch js/Error e
-      (* 100000000000 100))))
-
-(defonce logger
-  (if (>= (version-value *clojurescript-version*) (version-value "1.10.844"))
-    (goog.debug.Logger. "Figwheel REPL")
-    (.call glog/getLogger nil "Figwheel REPL")))
-
-(defn glog-error [log msg-ex]
-  (.call glog/error nil log msg-ex))
-
-(defn glog-fine [log msg]
-  (.call glog/fine nil log msg))
-
-(defn glog-info [log msg]
-  (.call glog/info nil log msg))
-
-(defn glog-warning [log msg]
-  (.call glog/warning nil log msg))
+(defonce logger (log/get-logger "Figwheel REPL"))
 
 (defn ^:export console-logging []
-  (when-not (gobj/get goog.debug.Console "instance")
-    (let [c (goog.debug.Console.)]
-      ;; don't display time
-      (doto (.getFormatter c)
-        (gobj/set "showAbsoluteTime" false)
-        (gobj/set "showRelativeTime" false))
-      (gobj/set goog.debug.Console "instance" c)
-      c))
-  (when-let [console-instance (gobj/get goog.debug.Console "instance")]
-    (.setCapturing console-instance true)
-    true))
-
-(defonce log-console (console-logging))
+  (log/console-logging))
 
 (defn debug [msg]
-  (.call glog/log nil logger goog.debug.Logger.Level.FINEST msg))
+  (log/debug logger msg))
+
 
 ;; TODO dev
 #_(.setLevel logger goog.debug.Logger.Level.FINEST)
@@ -175,8 +139,8 @@
               (do (.importScripts js/self (add-cache-buster request-url))
                   true)
               (catch js/Error e
-                (glog-error logger (str  "Figwheel: Error loading file " request-url))
-                (glog-error logger e)
+                (log/error logger (str  "Figwheel: Error loading file " request-url))
+                (log/error logger e)
                 false))))
 
 (defn ^:export create-node-script-import-fn []
@@ -195,8 +159,8 @@
         (callback (try
                     (js/require cache-path)
                     (catch js/Error e
-                      (glog-error logger (str  "Figwheel: Error loading file " cache-path))
-                      (glog-error logger e)
+                      (log/error logger (str  "Figwheel: Error loading file " cache-path))
+                      (log/error logger e)
                       false)))))))
 
 (def host-env
@@ -222,16 +186,16 @@
 ;; TODO Should just leverage the import script here somehow
 (defn reload-file [{:keys [request-url] :as file-msg} callback]
   {:pre [(string? request-url) (not (nil? callback))]}
-  (glog-fine logger (str "Attempting to load " request-url))
+  (log/fine logger (str "Attempting to load " request-url))
   ((or (gobj/get goog.global "FIGWHEEL_IMPORT_SCRIPT") reload-file*)
    request-url
    (fn [success?]
      (if success?
        (do
-         (glog-fine logger (str "Successfully loaded " request-url))
+         (log/fine logger (str "Successfully loaded " request-url))
          (apply callback [(assoc file-msg :loaded-file true)]))
        (do
-         (glog-error logger (str  "Error loading file " request-url))
+         (log/error logger (str  "Error loading file " request-url))
          (apply callback [file-msg]))))))
 
 ;; for goog.require consumption
@@ -252,7 +216,7 @@
                                  (fn [r _]
                                    (try (js/eval opt-source-text)
                                         (catch js/Error e
-                                          (glog-error logger e)))
+                                          (log/error logger e)))
                                    (r true)))))
                       url
                       #(.then %
@@ -365,8 +329,8 @@
 (defmethod message "naming" [msg]
   (when-let [sn  (:session-name msg)] (set-state ::session-name sn))
   (when-let [sid (:session-id msg)]   (set-state ::session-id sid))
-  (glog-info logger (str "Session ID: "   (session-id)))
-  (glog-info logger (str "Session Name: " (session-name))))
+  (log/info logger (str "Session ID: "   (session-id)))
+  (log/info logger (str "Session Name: " (session-name))))
 
 (defmethod message "ping" [msg] (respond-to msg {:pong true}))
 
@@ -492,7 +456,7 @@
         (thunk)
         (gobj/set goog.global "WebSocket" nil))
       (do
-        (glog-error
+        (log/error
          logger
          (if (= host-env :node)
            "Can't connect!! Please make sure ws is installed\n do -> 'npm install ws'"
@@ -513,7 +477,7 @@
                                              (js->clj (js/JSON.parse msg) :keywordize-keys true)
                                              :websocket websocket))
                                    (catch js/Error e
-                                     (glog-error logger e))))))
+                                     (log/error logger e))))))
           (.addEventListener goog.net.WebSocket.EventType.OPENED
                              (fn [e]
                                (connection-established! url)
@@ -585,13 +549,13 @@
                    (message (assoc (js->clj msg :keywordize-keys true)
                                    :http-url surl))
                    (catch js/Error e
-                     (glog-error logger e))))]
+                     (log/error logger e))))]
     (doto (.getQueryData url)
       (.add "fwinit" "true"))
     (.then (http-get url)
            (fn [msg]
              (let [typ (gobj/get msg "connection-type")]
-               (glog-info logger (str "Connected: " typ))
+               (log/info logger (str "Connected: " typ))
                (msg-fn msg)
                (connection-established! url)
                ;; after connecting setup printing redirects
@@ -602,11 +566,11 @@
                  (poll msg-fn connect-url'))))
            (fn [e];; didn't connect
              (when (instance? js/Error e)
-               (glog-error logger e))
+               (log/error logger e))
              (when (and (instance? goog.net.XhrIo e) (.getResponseBody e))
                (debug (.getResponseBody e)))
              (let [wait-time (exponential-backoff attempt)]
-               (glog-info logger (str "HTTP Connection Error: next connection attempt in " (/ wait-time 1000) " seconds"))
+               (log/info logger (str "HTTP Connection Error: next connection attempt in " (/ wait-time 1000) " seconds"))
                (js/setTimeout #(http-connect* (inc attempt) connect-url')
                               wait-time))))))
 
@@ -618,7 +582,7 @@
           (get-websocket-class))
     url
     (do
-      (glog-warning
+      (log/warning
        logger
        (str
         "No WebSocket implementation found! Falling back to http-long-polling"
@@ -630,27 +594,11 @@
 
 (goog-define client-log-level "info")
 
-(def log-levels
-  (into {}
-        (map (juxt
-              string/lower-case
-              #(gobj/get goog.debug.Logger.Level %))
-             (map str '(SEVERE WARNING INFO CONFIG FINE FINER FINEST)))))
-
-(defn set-log-level [logger' level]
-  (if-let [lvl (get log-levels level)]
-    (do
-      (.setLevel logger' lvl)
-      (debug (str "setting log level to " level)))
-    (glog-warning logger'
-                  (str "Log level " (pr-str level) " doesn't exist must be one of "
-                       (pr-str '("severe" "warning" "info" "config" "fine" "finer" "finest"))))))
-
 (defn init-log-level! []
   (doseq [logger' (cond-> [logger]
                     (exists? js/figwheel.core)
                     (conj js/figwheel.core.logger))]
-    (set-log-level logger' client-log-level)))
+    (log/set-log-level logger' client-log-level)))
 
 (defn connect* [connect-url']
   (init-log-level!)
