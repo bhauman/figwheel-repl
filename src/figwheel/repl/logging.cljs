@@ -2,8 +2,8 @@
   (:require [goog.log :as glog]
             [goog.object :as gobj]
             [clojure.string :as string])
-  (:import [goog.debug.Console]
-           [goog.debug.Logger]))
+  (:import [goog.debug Console]
+           [goog.debug Logger]))
 
 (defn cljs-version->value [v]
   (try
