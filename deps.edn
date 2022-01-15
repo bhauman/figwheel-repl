@@ -7,7 +7,6 @@
         ring-cors/ring-cors {:mvn/version "0.1.13"}}
  :aliases
  {:dev {:extra-deps
-        {ring {:mvn/version "1.9.1"}
+        {ring/ring {:mvn/version "1.9.1"}
          org.eclipse.jetty.websocket/websocket-servlet {:mvn/version "9.4.36.v20210114"}
-         org.eclipse.jetty.websocket/websocket-server {:mvn/version "9.4.36.v20210114"}
-         }}}}
+         org.eclipse.jetty.websocket/websocket-server {:mvn/version "9.4.36.v20210114"}}}}}
