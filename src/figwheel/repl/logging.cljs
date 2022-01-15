@@ -2,8 +2,8 @@
   (:require [goog.log :as glog]
             [goog.object :as gobj]
             [clojure.string :as string])
-  (:import [goog.debug.Console]
-           [goog.debug.Logger]))
+  (:import [goog.debug Console]
+           [goog.log Logger]))
 
 (defn get-logger [nm]
   (.call glog/getLogger nil nm))
@@ -22,7 +22,7 @@
 
 (defonce LogLevel
   (or goog.log.Level
-      goog.debug.Logger.Level))
+      goog.log.Logger.Level))
 
 (defn debug [log msg]
   (.call glog/log nil log LogLevel.FINEST msg))
