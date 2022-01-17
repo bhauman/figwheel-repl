@@ -2,8 +2,7 @@
   (:require [goog.log :as glog]
             [goog.object :as gobj]
             [clojure.string :as string])
-  (:import [goog.debug.Console]
-           [goog.debug.Logger]))
+  (:import [goog.debug Console]))
 
 (defn get-logger [nm]
   (.call glog/getLogger nil nm))
