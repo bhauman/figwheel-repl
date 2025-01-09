@@ -1,24 +1,30 @@
 (ns figwheel.server.jetty-websocket
   (:require
    [clojure.string :as string]
-   [ring.adapter.jetty :as jt])
+   [ring.adapter.jetty :as jt]
+   [ring.util.jakarta.servlet :as servlet]
+   [ring.websocket])
   (:import
+   [java.time Duration]
+   [jakarta.servlet AsyncContext]
+   [jakarta.servlet.http HttpServlet HttpServletRequest HttpServletResponse]
+   [org.eclipse.jetty.server Request Handler]
+   [org.eclipse.jetty.server.handler HandlerList]
+   [org.eclipse.jetty.servlet ServletContextHandler ServletHandler ServletHolder]
+   ;; [org.eclipse.jetty.util.log Log StdErrLog] ;; no longer in jetty11
    [org.eclipse.jetty.websocket.api
     WebSocketAdapter
+    WebSocketPingPongListener
     Session
     #_UpgradeRequest
     #_RemoteEndpoint]
-   [org.eclipse.jetty.websocket.server WebSocketHandler]
-   [org.eclipse.jetty.server Request Handler]
-   [org.eclipse.jetty.server.handler
-    ContextHandler
-    ContextHandlerCollection
-    HandlerList]
-   [org.eclipse.jetty.websocket.servlet
-    WebSocketServletFactory WebSocketCreator
-    ServletUpgradeRequest ServletUpgradeResponse]
-   [org.eclipse.jetty.util.log Log StdErrLog]))
-
+   [org.eclipse.jetty.websocket.server
+    #_JettyServerUpgradeRequest
+    #_JettyServerUpgradeResponse
+    JettyWebSocketCreator
+    JettyWebSocketServerContainer]
+   [org.eclipse.jetty.websocket.server.config
+    JettyWebSocketServletContainerInitializer]))
 
 ;; ------------------------------------------------------
 ;; Jetty 9 Websockets
@@ -28,6 +34,13 @@
 
 (defn- do-nothing [& args])
 
+(defn set-log-level! [log-lvl]
+  (when log-lvl
+    (println (format "run-jetty: Skipping (set-log-level! %s). Jetty now uses SLF4J to configure logging."
+                     log-lvl))))
+
+;; ------------------------------------------------------
+
 (defn- proxy-ws-adapter
   [{:as ws-fns
     :keys [on-connect on-error on-text on-close on-bytes]
@@ -36,7 +49,7 @@
          on-text do-nothing
          on-close do-nothing
          on-bytes do-nothing}}]
-  (proxy [WebSocketAdapter] []
+  (proxy [WebSocketAdapter WebSocketPingPongListener] []
     (onWebSocketConnect [^Session session]
       (let [^WebSocketAdapter this this]
         (proxy-super onWebSocketConnect session))
@@ -54,56 +67,65 @@
 
 (defn- reify-default-ws-creator
   [ws-fns]
-  (reify WebSocketCreator
+  (reify JettyWebSocketCreator
     (createWebSocket [this _ _]
       (proxy-ws-adapter ws-fns))))
 
-(defn proxy-ws-handler
-  "Returns a Jetty websocket handler"
-  [{:as ws-fns
-    :keys [ws-max-idle-time ws-max-msg-size]
-    :or {ws-max-idle-time (* 7 24 60 60 1000) ;; a week long timeout
-         ws-max-msg-size (* 16 1024 1024)}}] ;; 16MB
-  (proxy [WebSocketHandler] []
-    (configure [^WebSocketServletFactory factory]
-      (doto (.getPolicy factory)
-            (.setIdleTimeout ws-max-idle-time)
-            (.setMaxTextMessageSize ws-max-msg-size)
-            (.setMaxBinaryMessageSize ws-max-msg-size))
-      (.setCreator factory (reify-default-ws-creator ws-fns)))
-    (handle [^String target, ^Request request req res]
-      (let [wsf (proxy-super getWebSocketFactory)]
-        (if (.isUpgradeRequest wsf req res)
-          (if (.acceptWebSocket wsf req res)
-            (.setHandled request true)
-            (when (.isCommitted res)
-              (.setHandled request true)))
-          (proxy-super handle target request req res))))))
+(defn proxy-ws-servlet
+  [ws {:as _
+       :keys [ws-max-idle-time
+              ws-max-text-message-size]
+       :or {ws-max-idle-time (* 7 24 60 60 1000) ;; a week long timeout; 16MB size
+            ws-max-text-message-size (* 16 1024 1024)}}]
+  (ServletHolder.
+   (proxy [HttpServlet] []
+     (doGet [req res]
+       (let [creator (reify-default-ws-creator ws)
+             container (JettyWebSocketServerContainer/getContainer (.getServletContext ^HttpServlet this))]
+         (.setIdleTimeout container (Duration/ofMillis ws-max-idle-time))
+         (.setMaxTextMessageSize container ws-max-text-message-size)
+         (.upgrade container creator req res))))))
 
-(defn set-log-level! [log-lvl]
-  (let [level (or ({:all     StdErrLog/LEVEL_ALL
-                    :debug   StdErrLog/LEVEL_DEBUG
-                    :info    StdErrLog/LEVEL_INFO
-                    :off     StdErrLog/LEVEL_OFF
-                    :warn    StdErrLog/LEVEL_WARN } log-lvl)
-                  StdErrLog/LEVEL_WARN)]
-    ;; this only works for the jetty StdErrLog
-    (let [l (Log/getRootLogger)]
-      (when (instance? StdErrLog l)
-        (.setLevel l level)))
-    (doseq [[k l] (Log/getLoggers)]
-      (when (instance? StdErrLog l)
-        (.setLevel l level)))))
+;; ------------------------------------------------------
+;; borrowed from ring/ring-jetty-adapter
+
+(defn- async-jetty-raise [^AsyncContext context ^HttpServletResponse response]
+  (fn [^Throwable exception]
+    (.sendError response 500 (.getMessage exception))
+    (.complete context)))
+
+(defn- async-jetty-respond [^AsyncContext context request response]
+  (fn [response-map]
+    (if (ring.websocket/websocket-response? response-map)
+      (assert false "async websocket-response not implemented")
+      (servlet/update-servlet-response response context response-map))))
+
+(defn- async-proxy-handler ^ServletHandler [handler timeout]
+  (proxy [ServletHandler] []
+    (doHandle [_ ^Request base-request ^HttpServletRequest request response]
+      (let [^AsyncContext context (.startAsync request)]
+        (.setTimeout context timeout)
+        (try
+          (handler
+           (servlet/build-request-map request)
+           (async-jetty-respond context request response)
+           (async-jetty-raise context response))
+          (finally
+            (.setHandled base-request true)))))))
+
+;; ------------------------------------------------------
 
 (defn async-websocket-configurator [{:keys [websockets async-handlers]}]
   (fn [server]
     (let [existing-handler (.getHandler server)
           ws-proxy-handlers
           (map (fn [[context-path handler-map]]
-                 (doto (ContextHandler. context-path)
-                   (.setAllowNullPathInfo
-                    (get handler-map :allow-null-path-info true))
-                   (.setHandler (proxy-ws-handler handler-map))))
+                 (doto (ServletContextHandler.)
+                   (.setContextPath context-path)
+                   (.setAllowNullPathInfo (get handler-map :allow-null-path-info true))
+                   ;; note: need /* given ServletContextHandler context-path
+                   (.addServlet ^ServletHolder (proxy-ws-servlet handler-map {}) "/*")
+                   (JettyWebSocketServletContainerInitializer/configure nil)))
                websockets)
           async-proxy-handlers
           (map
@@ -111,14 +133,11 @@
              (let [{:keys [allow-null-path-info async-timeout]
                     :or {allow-null-path-info true async-timeout 0}}
                    (meta async-handler)]
-               (doto (ContextHandler. context-path)
+               (doto (ServletContextHandler.)
+                 (.setContextPath context-path)
                  (.setAllowNullPathInfo allow-null-path-info)
-                 ;; there was a change in async-proxy-handler as of ring 1.9.0
-                 (.setHandler (try
-                                (#'jt/async-proxy-handler async-handler async-timeout nil)
-                                ;; TODO remove this in a few releases say after 0.2.15
-                                (catch clojure.lang.ArityException e
-                                  (#'jt/async-proxy-handler async-handler async-timeout)))))))
+                 (.setHandler (async-proxy-handler async-handler async-timeout))
+                 (JettyWebSocketServletContainerInitializer/configure nil))))
            async-handlers)
           contexts (doto (HandlerList.)
                      (.setHandlers
@@ -160,6 +179,7 @@
                 (configurator' server)
                 (set-log-level! log-level)))))))
 
+;; ------------------------------------------------------
 ;; Figwheel REPL adapter
 
 (defn build-request-map [request]
@@ -204,7 +224,6 @@
    handler
    (cond-> (merge default-options options)
      (:figwheel.repl/abstract-websocket-connections options)
-     ;; TODO make figwheel-path configurable
      (update :websockets
              merge
              (into {}

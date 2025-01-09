@@ -1081,41 +1081,45 @@
   (let [server-fn (or (when-let [server-fn-symbol (get options :ring-server)]
                         (dynload server-fn-symbol))
                       figwheel.server.jetty-websocket/run-server)
-        figwheel-connect-path (get options :figwheel-connect-path "/figwheel-connect")]
-    (server-fn
-     ((or (when-let [stack-fn (get options :ring-stack)]
-            (dynload stack-fn))
-          figwheel.server.ring/default-stack)
-      (:ring-handler options)
-      ;; TODO this should only work for the default target of browser
-      (cond-> (:ring-stack-options options)
-        (:cljsjs-resources options)
-        (assoc-in [:figwheel.server.ring/dev :figwheel.server.ring/cljsjs-resources] true)
-        ;; do we need a default index?
-        (and
-         (contains? #{nil :browser :bundle} (:target options))
-         (:output-to options)
-         (not (get-in (:ring-stack-options options) [:figwheel.server.ring/dev :figwheel.server.ring/system-app-handler])))
-        (assoc-in
-         [:figwheel.server.ring/dev :figwheel.server.ring/system-app-handler]
-         #(figwheel.server.ring/default-index-html
-           %
-           (figwheel.server.ring/index-html (select-keys options [:output-to]))))))
-     (assoc (get options :ring-server-options)
-            :async-handlers
-            {figwheel-connect-path
-             (-> (fn [ring-request send raise]
-                   (send {:status 404
-                          :headers {"Content-Type" "text/html"}
-                          :body "Not found: figwheel http-async-polling"}))
-                 (asyc-http-polling-middleware figwheel-connect-path connections)
-                 (figwheel.server.ring/wrap-async-cors
-                  :access-control-allow-origin #".*"
-                  :access-control-allow-methods
-                  [:head :options :get :put :post :delete :patch]))}
-            ::abstract-websocket-connections
-            {figwheel-connect-path
-             (abstract-websocket-connection connections)}))))
+        stack-fn (or (when-let [stack-fn (get options :ring-stack)]
+                       (dynload stack-fn))
+                     figwheel.server.ring/default-stack)
+        ;; TODO this should only work for the default target of browser
+        stack-options
+        (cond-> (:ring-stack-options options)
+          (:cljsjs-resources options)
+          (assoc-in [:figwheel.server.ring/dev :figwheel.server.ring/cljsjs-resources] true)
+          ;; do we need a default index?
+          (and
+            (contains? #{nil :browser :bundle} (:target options))
+            (:output-to options)
+            (not (get-in (:ring-stack-options options)
+                         [:figwheel.server.ring/dev :figwheel.server.ring/system-app-handler])))
+          (assoc-in
+            [:figwheel.server.ring/dev :figwheel.server.ring/system-app-handler]
+            #(figwheel.server.ring/default-index-html
+               %
+               (figwheel.server.ring/index-html (select-keys options [:output-to])))))
+        figwheel-connect-path (get options :figwheel-connect-path "/figwheel-connect")
+        server-options
+        (assoc (get options :ring-server-options)
+               :async-handlers
+               {figwheel-connect-path
+                (-> (fn [ring-request send raise]
+                      (send {:status 404
+                             :headers {"Content-Type" "text/html"}
+                             :body "Not found: figwheel http-async-polling"}))
+                    (asyc-http-polling-middleware figwheel-connect-path connections)
+                    (figwheel.server.ring/wrap-async-cors
+                      :access-control-allow-origin #".*"
+                      :access-control-allow-methods
+                      [:head :options :get :put :post :delete :patch]))}
+               ::abstract-websocket-connections
+               {figwheel-connect-path
+                (abstract-websocket-connection connections)})
+        server (server-fn (stack-fn (:ring-handler options) stack-options)
+                          server-options)]
+    server))
 
 (defn run-default-server [options connections]
   (run-default-server* (update options :ring-server-options
@@ -1258,7 +1262,7 @@
           (println "For a better development experience:")
           (println "  1. Open chrome://inspect/#devices ... (in Chrome)")
           (println "  2. Click \"Open dedicated DevTools for Node\"")))
-      
+
       ;; open a url
       (and (not (= :nodejs target))
            open-url)
@@ -1294,7 +1298,7 @@
     (if (instance? Thread proc)
       (.stop proc)
       (.destroy proc))
-    
+
     #_(.waitFor proc) ;; ?
     )
   (when-let [listener @printing-listener]
