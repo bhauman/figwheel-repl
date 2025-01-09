@@ -9,6 +9,5 @@
  :aliases
  {:dev {:extra-deps
         {ring/ring {:mvn/version "1.13.0"}
-         org.eclipse.jetty.websocket/websocket-servlet {:mvn/version "11.0.24"}
-         org.eclipse.jetty.websocket/websocket-jetty-server {:mvn/version "11.0.24"}
+
          }}}}
