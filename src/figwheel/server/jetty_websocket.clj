@@ -3,7 +3,7 @@
    [clojure.string :as string]
    [ring.adapter.jetty :as jt]
    [ring.util.jakarta.servlet :as servlet]
-   [ring.websocket])
+   [ring.websocket :as ws])
   (:import
    [java.time Duration]
    [jakarta.servlet AsyncContext]
@@ -41,7 +41,7 @@
 
 ;; ------------------------------------------------------
 
-(defn- proxy-ws-adapter
+#_(defn- proxy-ws-adapter
   [{:as ws-fns
     :keys [on-connect on-error on-text on-close on-bytes]
     :or {on-connect do-nothing
@@ -65,13 +65,13 @@
     (onWebSocketBinary [^bytes payload offset len]
       (on-bytes this payload offset len))))
 
-(defn- reify-default-ws-creator
+#_(defn- reify-default-ws-creator
   [ws-fns]
   (reify JettyWebSocketCreator
     (createWebSocket [this _ _]
       (proxy-ws-adapter ws-fns))))
 
-(defn proxy-ws-servlet
+#_(defn proxy-ws-servlet
   [ws {:as _
        :keys [ws-max-idle-time
               ws-max-text-message-size]
@@ -89,18 +89,18 @@
 ;; ------------------------------------------------------
 ;; borrowed from ring/ring-jetty-adapter
 
-(defn- async-jetty-raise [^AsyncContext context ^HttpServletResponse response]
+#_(defn- async-jetty-raise [^AsyncContext context ^HttpServletResponse response]
   (fn [^Throwable exception]
     (.sendError response 500 (.getMessage exception))
     (.complete context)))
 
-(defn- async-jetty-respond [^AsyncContext context request response]
+#_(defn- async-jetty-respond [^AsyncContext context request response]
   (fn [response-map]
     (if (ring.websocket/websocket-response? response-map)
       (assert false "async websocket-response not implemented")
       (servlet/update-servlet-response response context response-map))))
 
-(defn- async-proxy-handler ^ServletHandler [handler timeout]
+#_(defn- async-proxy-handler ^ServletHandler [handler timeout]
   (proxy [ServletHandler] []
     (doHandle [_ ^Request base-request ^HttpServletRequest request response]
       (let [^AsyncContext context (.startAsync request)]
@@ -115,7 +115,7 @@
 
 ;; ------------------------------------------------------
 
-(defn async-websocket-configurator [{:keys [websockets async-handlers]}]
+#_(defn async-websocket-configurator [{:keys [websockets async-handlers]}]
   (fn [server]
     (let [existing-handler (.getHandler server)
           ws-proxy-handlers
@@ -169,10 +169,10 @@
      (if (or (not-empty websockets) (not-empty async-handlers))
        (assoc options :configurator
               (fn [server]
+                (configurator' server)                
                 (set-log-level! log-level)
-                (configurator' server)
-                ((async-websocket-configurator
-                  (select-keys options [:websockets :async-handlers])) server)))
+                #_((async-websocket-configurator
+                    (select-keys options [:websockets :async-handlers])) server)))
        (assoc options
               :configurator
               (fn [server]
@@ -199,14 +199,14 @@
 
 ;; TODO translate on close status's
 ;; TODO translate receiving bytes to on-receive
-(defn websocket-connection-data [^WebSocketAdapter websocket-adaptor]
+#_(defn websocket-connection-data [^WebSocketAdapter websocket-adaptor]
   {:request (build-request-map (.. websocket-adaptor getSession getUpgradeRequest))
    :send-fn (fn [string-message]
               (.. websocket-adaptor getRemote (sendString string-message)))
    :close-fn (fn [] (.. websocket-adaptor getSession close))
    :is-open-fn (fn [conn] (.. websocket-adaptor getSession isOpen))})
 
-(defn adapt-figwheel-ws [{:keys [on-connect on-receive on-close] :as ws-fns}]
+#_(defn adapt-figwheel-ws [{:keys [on-connect on-receive on-close] :as ws-fns}]
   (assert on-connect on-receive)
   (-> ws-fns
       (dissoc :on-connect :on-receive :on-close)
@@ -215,21 +215,56 @@
               :on-text (fn [_ data] (on-receive data))
               :on-close (fn [_ status reason] (on-close status)))))
 
+
+#_(defn websocket-connection-data-new [^WebSocketAdapter websocket-adaptor]
+  {:request (build-request-map (.. websocket-adaptor getSession getUpgradeRequest))
+   :send-fn (fn [string-message]
+              (.. websocket-adaptor getRemote (sendString string-message)))
+   :close-fn (fn [] (.. websocket-adaptor getSession close))
+   :is-open-fn (fn [conn] (.. websocket-adaptor getSession isOpen))})
+
+#_(defn adapt-fig-to-ring [{:keys [on-connect on-receive on-close] :as ws-fns}]
+  (assert on-connect on-receive)
+  (-> ws-fns
+      (dissoc :on-connect :on-receive :on-close)
+      (assoc  :on-connect (fn [websocket-adaptor]
+                            (on-connect (websocket-connection-data websocket-adaptor)))
+              :on-text (fn [_ data] (on-receive data))
+              :on-close (fn [_ status reason] (on-close status)))))
+
+(defn websocket-middleware [handler [path {:keys [on-connect on-receive on-close] :as abstract-conn}]]
+  (fn [request]
+    (if (and (= (:uri request) path) (ws/upgrade-request? request))
+      {::ws/listener
+         {:on-open    (fn [socket]
+                        (on-connect
+                         {:request request
+                          :send-fn (fn [string-message] (ws/send socket string-message))
+                          :close-fn (fn [] (ws/close socket))
+                          :is-open-fn (fn [conn] (ws/open? socket))}))
+          :on-message (fn [socket message] (on-receive message))
+          :on-close   (fn [socket reason] (on-close reason))}}
+      (handler request))))
+
 ;; these default options assume the context of starting a server in development-mode
 ;; from the figwheel repl
 (def default-options {:join? false})
 
 (defn run-server [handler options]
   (run-jetty
-   handler
-   (cond-> (merge default-options options)
+   (cond-> handler
      (:figwheel.repl/abstract-websocket-connections options)
-     (update :websockets
-             merge
-             (into {}
-                   (map (fn [[path v]]
-                          [path (adapt-figwheel-ws v)])
-                        (:figwheel.repl/abstract-websocket-connections options)))))))
+     (websocket-middleware (first (:figwheel.repl/abstract-websocket-connections options))))
+   (merge default-options options)
+   #_(cond-> (merge default-options options)
+     
+         (:figwheel.repl/abstract-websocket-connections options)
+         (update :websockets
+                   merge
+                   (into {}
+                         (map (fn [[path v]]
+                                [path (adapt-figwheel-ws v)])
+                              (:figwheel.repl/abstract-websocket-connections options)))))))
 
 (comment
   (defonce scratch (atom {}))
@@ -254,3 +289,9 @@
                 :configurator 'figwheel.server.jetty-websocket/sample-configurator}))
 
 #_(.stop server)
+
+
+;; TODOs!!!!
+;; * make sure request maps are equal
+;; * check that multiple window behavior is the same
+;; * get async up and running if possible
