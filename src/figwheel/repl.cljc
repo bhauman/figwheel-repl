@@ -21,7 +21,7 @@
              [clojure.java.io :as io]
              [clojure.string :as string]
              [figwheel.server.ring]
-             [figwheel.server.jetty-websocket]]))
+             [figwheel.server.jetty-websocket :refer [websocket-middleware]]]))
   (:import
    #?@(:cljs [goog.net.WebSocket
               goog.debug.Console
@@ -662,6 +662,8 @@
                   (rand-nth (seq (available-names connections))))]
     [sid sname]))
 
+(declare ping-thread)
+
 (defn create-connection! [ring-request options]
   (let [[sess-id sess-name] (negotiate-id ring-request @*connections*)
         conn (merge (select-keys ring-request [:server-port :scheme :uri :server-name :query-string :request-method])
@@ -673,6 +675,7 @@
                       (assoc :query (parse-query-string (:query-string ring-request))))
                     options)]
     (swap! *connections* assoc sess-id conn)
+    (ping-thread *connections* sess-id {:interval 10000 :ping-timeout 2000})
     conn))
 
 (defn remove-connection! [{:keys [session-id] :as conn}]
@@ -702,7 +705,7 @@
     {:on-connect (fn [{:keys [request send-fn close-fn is-open-fn]
                        :as connect-data}]
                    ;; TODO remove dev only
-                   (swap! scratch assoc :ring-request request)
+                   #_(swap! scratch assoc :ring-request request)
                    (binding [*connections* connections]
                      (let [conn' (create-connection!
                                   request
@@ -937,7 +940,7 @@
 
 (defn asyc-http-polling-middleware [handler path connections]
   (fn [ring-request send raise]
-    (swap! scratch assoc :async-request ring-request)
+    #_(swap! scratch assoc :async-request ring-request)
     (if-not (.startsWith (:uri ring-request) path)
       (handler ring-request send raise)
       (binding [*connections* connections]
@@ -1094,31 +1097,29 @@
             (contains? #{nil :browser :bundle} (:target options))
             (:output-to options)
             (not (get-in (:ring-stack-options options)
-                         [:figwheel.server.ring/dev :figwheel.server.ring/system-app-handler])))
+                        [:figwheel.server.ring/dev :figwheel.server.ring/system-app-handler])))
           (assoc-in
             [:figwheel.server.ring/dev :figwheel.server.ring/system-app-handler]
             #(figwheel.server.ring/default-index-html
-               %
-               (figwheel.server.ring/index-html (select-keys options [:output-to])))))
+              %
+              (figwheel.server.ring/index-html (select-keys options [:output-to])))))
         figwheel-connect-path (get options :figwheel-connect-path "/figwheel-connect")
-        server-options
-        (assoc (get options :ring-server-options)
-               :async-handlers
-               {figwheel-connect-path
-                (-> (fn [ring-request send raise]
-                      (send {:status 404
-                             :headers {"Content-Type" "text/html"}
-                             :body "Not found: figwheel http-async-polling"}))
+        server (server-fn
+                (-> (stack-fn (:ring-handler options) stack-options)
+                    ((fn [handler]
+                       (fn [request send err]
+                         ;; downgrade to sync
+                         (try
+                           (send (handler request))
+                           (catch Throwable t
+                             (err t))))))
                     (asyc-http-polling-middleware figwheel-connect-path connections)
                     (figwheel.server.ring/wrap-async-cors
-                      :access-control-allow-origin #".*"
-                      :access-control-allow-methods
-                      [:head :options :get :put :post :delete :patch]))}
-               ::abstract-websocket-connections
-               {figwheel-connect-path
-                (abstract-websocket-connection connections)})
-        server (server-fn (stack-fn (:ring-handler options) stack-options)
-                          server-options)]
+                     :access-control-allow-origin #".*"
+                     :access-control-allow-methods
+                     [:head :options :get :put :post :delete :patch])
+                    (websocket-middleware figwheel-connect-path (abstract-websocket-connection connections)))
+                (get options :ring-server-options))]
     server))
 
 (defn run-default-server [options connections]
