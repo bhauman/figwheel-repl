@@ -677,8 +677,6 @@
                   (rand-nth (seq (available-names connections))))]
     [sid sname]))
 
-(declare ping-thread)
-
 (defn create-connection! [ring-request options]
   (let [[sess-id sess-name] (negotiate-id ring-request @*connections*)
         conn (merge (select-keys ring-request [:server-port :scheme :uri :server-name :query-string :request-method])
