@@ -264,6 +264,7 @@
 ;; --------------------------------------------------------------
 
 (goog-define connect-url "ws://[[client-hostname]]:[[client-port]]/figwheel-connect")
+(goog-define heartbeat-interval 10000) ;; 10 seconds
 
 (def state (atom {}))
 
@@ -465,7 +466,8 @@
 (defn ws-connect [& [websocket-url']]
   (ensure-websocket
    #(let [websocket (goog.net.WebSocket.)
-          url (str (make-url websocket-url'))]
+          url (str (make-url websocket-url'))
+          heartbeat-job (atom nil)]
       (try
         (doto websocket
           (.addEventListener goog.net.WebSocket.EventType.MESSAGE
@@ -482,9 +484,22 @@
                              (fn [e]
                                (connection-established! url)
                                (swap! state assoc :connection {:websocket websocket})
+                               (reset!
+                                heartbeat-job
+                                (js/setInterval
+                                 (fn []
+                                   (when (.isOpen websocket)
+                                     (.send
+                                      websocket
+                                      (pr-str {:figwheel-event "heartbeat"}))
+                                     (log/fine logger "SENDING websocket heartbeat")))
+                                 heartbeat-interval))
                                (hook-repl-printing-output! {:websocket websocket})))
           (.addEventListener goog.net.WebSocket.EventType.CLOSED
-                             (fn [e] (connection-closed! url)))
+                             (fn [e]
+                               (connection-closed! url)
+                               (log/fine logger "CLOSING websocket heartbeat")
+                               (js/clearInterval @heartbeat-job)))
           (.open url))))))
 
 ;; -----------------------------------------------------------
@@ -675,7 +690,6 @@
                       (assoc :query (parse-query-string (:query-string ring-request))))
                     options)]
     (swap! *connections* assoc sess-id conn)
-    (ping-thread *connections* sess-id {:interval 10000 :ping-timeout 2000})
     conn))
 
 (defn remove-connection! [{:keys [session-id] :as conn}]
