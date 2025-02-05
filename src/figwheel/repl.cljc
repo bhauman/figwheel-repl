@@ -468,39 +468,38 @@
    #(let [websocket (goog.net.WebSocket.)
           url (str (make-url websocket-url'))
           heartbeat-job (atom nil)]
-      (try
-        (doto websocket
-          (.addEventListener goog.net.WebSocket.EventType.MESSAGE
-                             (fn [e]
-                               (when-let [msg (gobj/get e "message")]
-                                 (try
-                                   (debug msg)
-                                   (message (assoc
-                                             (js->clj (js/JSON.parse msg) :keywordize-keys true)
-                                             :websocket websocket))
-                                   (catch js/Error e
-                                     (log/error logger e))))))
-          (.addEventListener goog.net.WebSocket.EventType.OPENED
-                             (fn [e]
-                               (connection-established! url)
-                               (swap! state assoc :connection {:websocket websocket})
-                               (reset!
-                                heartbeat-job
-                                (js/setInterval
-                                 (fn []
-                                   (when (.isOpen websocket)
-                                     (.send
-                                      websocket
-                                      (pr-str {:figwheel-event "heartbeat"}))
-                                     (log/fine logger "SENDING websocket heartbeat")))
-                                 heartbeat-interval))
-                               (hook-repl-printing-output! {:websocket websocket})))
-          (.addEventListener goog.net.WebSocket.EventType.CLOSED
-                             (fn [e]
-                               (connection-closed! url)
-                               (log/fine logger "CLOSING websocket heartbeat")
-                               (js/clearInterval @heartbeat-job)))
-          (.open url))))))
+      (doto websocket
+        (.addEventListener goog.net.WebSocket.EventType.MESSAGE
+                           (fn [e]
+                             (when-let [msg (gobj/get e "message")]
+                               (try
+                                 (debug msg)
+                                 (message (assoc
+                                           (js->clj (js/JSON.parse msg) :keywordize-keys true)
+                                           :websocket websocket))
+                                 (catch js/Error e
+                                   (log/error logger e))))))
+        (.addEventListener goog.net.WebSocket.EventType.OPENED
+                           (fn [e]
+                             (connection-established! url)
+                             (swap! state assoc :connection {:websocket websocket})
+                             (reset!
+                              heartbeat-job
+                              (js/setInterval
+                               (fn []
+                                 (when (.isOpen websocket)
+                                   (.send
+                                    websocket
+                                    (pr-str {:figwheel-event "heartbeat"}))
+                                   (log/fine logger "SENDING websocket heartbeat")))
+                               heartbeat-interval))
+                             (hook-repl-printing-output! {:websocket websocket})))
+        (.addEventListener goog.net.WebSocket.EventType.CLOSED
+                           (fn [e]
+                             (connection-closed! url)
+                             (log/fine logger "CLOSING websocket heartbeat")
+                             (js/clearInterval @heartbeat-job)))
+        (.open url)))))
 
 ;; -----------------------------------------------------------
 ;; HTTP simple and long polling
