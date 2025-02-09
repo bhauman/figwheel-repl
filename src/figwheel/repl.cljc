@@ -20,6 +20,7 @@
              [cljs.stacktrace]
              [clojure.java.io :as io]
              [clojure.string :as string]
+             [ring.middleware.cors :as cors]
              [figwheel.server.ring]
              [figwheel.server.jetty-websocket :refer [websocket-middleware]]]))
   (:import
@@ -1115,22 +1116,34 @@
               %
               (figwheel.server.ring/index-html (select-keys options [:output-to])))))
         figwheel-connect-path (get options :figwheel-connect-path "/figwheel-connect")
-        server (server-fn
-                (-> (stack-fn (:ring-handler options) stack-options)
-                    ((fn [handler]
-                       (fn [request send err]
-                         ;; downgrade to sync
-                         (try
-                           (send (handler request))
-                           (catch Throwable t
-                             (err t))))))
-                    (asyc-http-polling-middleware figwheel-connect-path connections)
-                    (figwheel.server.ring/wrap-async-cors
-                     :access-control-allow-origin #".*"
-                     :access-control-allow-methods
-                     [:head :options :get :put :post :delete :patch])
-                    (websocket-middleware figwheel-connect-path (abstract-websocket-connection connections)))
-                (get options :ring-server-options))]
+        server (if (:http-async-endpoint options)
+                 (server-fn
+                  (-> (stack-fn (:ring-handler options) stack-options)
+                      ;; downgrade to sync TODO refactor this out to jetty-websocket
+                      ((fn [handler]
+                         (fn [request send err]
+                           (try
+                             (send (handler request))
+                             (catch Throwable t
+                               (err t))))))
+                      (asyc-http-polling-middleware figwheel-connect-path connections)
+                      (figwheel.server.ring/wrap-async-cors
+                       :access-control-allow-origin #".*"
+                       :access-control-allow-methods
+                       [:head :options :get :put :post :delete :patch]))
+                  (-> (get options :ring-server-options)
+                      (assoc :async? true)))
+                 (server-fn
+                  (-> (stack-fn (:ring-handler options) stack-options)
+                      (cors/wrap-cors
+                       :access-control-allow-origin #".*"
+                       :access-control-allow-methods
+                       [:head :options :get :put :post :delete :patch])
+                      (websocket-middleware figwheel-connect-path
+                                            (abstract-websocket-connection
+                                             figwheel-connect-path
+                                             connections)))
+                  (get options :ring-server-options)))]
     server))
 
 (defn run-default-server [options connections]
@@ -1219,6 +1232,7 @@
                                           :host
                                           :target
                                           :output-to
+                                          :http-async-endpoint
                                           :ring-handler
                                           :cljsjs-resources
                                           :ring-server
