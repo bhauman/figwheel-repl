@@ -1141,7 +1141,6 @@
                        [:head :options :get :put :post :delete :patch])
                       (websocket-middleware figwheel-connect-path
                                             (abstract-websocket-connection
-                                             figwheel-connect-path
                                              connections)))
                   (get options :ring-server-options)))]
     server))
