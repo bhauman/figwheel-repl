@@ -28,6 +28,7 @@
               goog.debug.Console
               [goog.Uri QueryData]
               [goog Promise]
+              [goog.log]
               [goog.storage.mechanism HTML5SessionStorage]]
        :clj [java.util.concurrent.ArrayBlockingQueue
              java.net.URLDecoder
@@ -57,7 +58,6 @@
 
 (defn debug [msg]
   (log/debug logger msg))
-
 
 ;; TODO dev
 #_(.setLevel logger goog.debug.Logger.Level.FINEST)
@@ -236,6 +236,7 @@
 ;; REPL print forwarding
 ;; --------------------------------------------------------------
 
+(goog-define client-log-level "info")
 (goog-define print-output "console,repl")
 
 (defn print-receivers [outputs]
@@ -257,6 +258,14 @@
   (let [printers (print-receivers print-output)]
     (set-print-fn! (fn [& args] (doseq [p printers] (out-print p args))))
     (set-print-err-fn! (fn [& args] (doseq [p printers] (err-print p args))))))
+
+(defn forward-client-logging-to-repl
+  "Forward client logging to REPL"
+  []
+  (goog.log/addHandler
+   logger
+   (fn [log-record]
+     (out-print :repl [(aget log-record "msg_")]))))
 
 #_ (printing-receivers "console,repl")
 
@@ -494,7 +503,9 @@
                                     (pr-str {:figwheel-event "heartbeat"}))
                                    (log/fine logger "SENDING websocket heartbeat")))
                                heartbeat-interval))
-                             (hook-repl-printing-output! {:websocket websocket})))
+                             (hook-repl-printing-output! {:websocket websocket})
+                             (when (= "finest" client-log-level)
+                               (forward-client-logging-to-repl))))
         (.addEventListener goog.net.WebSocket.EventType.CLOSED
                            (fn [e]
                              (connection-closed! url)
@@ -606,8 +617,6 @@
       (-> (guri/parse url)
           (.setScheme "http")
           str))))
-
-(goog-define client-log-level "info")
 
 (defn init-log-level! []
   (doseq [logger' (cond-> [logger]
@@ -900,6 +909,7 @@
                            (send-for-response* prom conn msg)
                            true
                            (catch Throwable t
+                             (println (ex-message t))
                              false))
                    (recur xc)
                    true)))]
@@ -1268,13 +1278,24 @@
                               (select-keys (:ring-server-options repl-env) [:host :port]))))]
     (cond
       (:launch-js repl-env)
-      (launch-js
-       (:launch-js repl-env)
-       repl-env
-       {:output-to output-to
-        :open-url open-url
-        :output-dir output-dir
-        :target target})
+      (let [launch-fn
+            (fn []
+              (launch-js
+               (:launch-js repl-env)
+               repl-env
+               {:output-to output-to
+                :open-url open-url
+                :output-dir output-dir
+                :target target}))]
+        (if-let [wait-ms (:open-url-wait-ms repl-env 1500)]
+          (doto (Thread.
+                 (fn []
+                   (Thread/sleep wait-ms)
+                   (launch-fn)))
+            (.setDaemon true)
+            (.start))
+          (launch-fn)))
+
       ;; Node REPL
       (and (= :nodejs target)
            (:launch-node repl-env true)
