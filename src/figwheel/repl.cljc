@@ -736,7 +736,10 @@
                                    :send-fn (fn [_ data]
                                               (send-fn data))})]
                        (vreset! conn conn')
-                       (send-fn (naming-response conn')))))
+                       (future (Thread/sleep 10)
+                               (send-fn (naming-response conn')
+                                        (fn [])
+                                        (fn [ex] (println (ex-message ex))))))))
      :on-close   (fn [status] (binding [*connections* connections]
                                 (remove-connection! @conn)))
      :on-receive (fn [data] (binding [*connections* connections]

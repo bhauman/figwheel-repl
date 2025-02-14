@@ -39,7 +39,11 @@
        {:on-open    (fn [socket]
                       (on-connect
                        {:request request
-                        :send-fn (fn [string-message] (ws/send socket string-message))
+                        :send-fn
+                        (fn
+                          ([string-message] (ws/send socket string-message))
+                          ([string-message succ-f fail-f]
+                           (ws/send socket string-message succ-f fail-f)))
                         :close-fn (fn [] (ws/close socket))
                         :is-open-fn (fn [conn] (ws/open? socket))}))
         :on-message (fn [socket message] (on-receive message))
