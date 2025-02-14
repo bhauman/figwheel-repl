@@ -504,8 +504,8 @@
                                    (log/fine logger "SENDING websocket heartbeat")))
                                heartbeat-interval))
                              (hook-repl-printing-output! {:websocket websocket})
-                             (when (= "finest" client-log-level)
-                               (forward-client-logging-to-repl))))
+                             #_(when (= "finest" client-log-level)
+                                 (forward-client-logging-to-repl))))
         (.addEventListener goog.net.WebSocket.EventType.CLOSED
                            (fn [e]
                              (connection-closed! url)
