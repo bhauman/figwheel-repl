@@ -21,6 +21,7 @@
              [clojure.java.io :as io]
              [clojure.string :as string]
              [ring.middleware.cors :as cors]
+             [ring.websocket :as ws]
              [figwheel.server.ring]
              [figwheel.server.jetty-websocket :refer [websocket-middleware]]]))
   (:import
@@ -30,7 +31,12 @@
               [goog Promise]
               [goog.log]
               [goog.storage.mechanism HTML5SessionStorage]]
-       :clj [java.util.concurrent.ArrayBlockingQueue
+       :clj [[java.util.concurrent
+              ArrayBlockingQueue
+              Executors
+              ScheduledExecutorService
+              TimeUnit
+              ThreadFactory]
              java.net.URLDecoder
              [java.lang ProcessBuilder Process]])))
 
@@ -642,6 +648,21 @@
 
 #?(:clj (do
 
+(let [scheduler (Executors/newScheduledThreadPool
+                 1
+                 (reify ThreadFactory
+                   (newThread [_ runnable]
+                     (let [thread (Thread. runnable)]
+                       (.setDaemon thread true)
+                       thread))))]
+  (defn schedule-task! [^Runnable f ms]
+    (.schedule scheduler f ms TimeUnit/MILLISECONDS)))
+
+(defn wait! [ms]
+  (let [prom (promise)]
+    (schedule-task! #(deliver prom true) ms)
+    @prom))
+
 (defonce ^:private listener-set (atom {}))
 (defn add-listener
   ([f]   (add-listener f f))
@@ -736,10 +757,11 @@
                                    :send-fn (fn [_ data]
                                               (send-fn data))})]
                        (vreset! conn conn')
-                       (future (Thread/sleep 700)
-                               (send-fn (naming-response conn')
-                                        (fn [])
-                                        (fn [ex] (println (ex-message ex))))))))
+                       (schedule-task! (fn []
+                                         (send-fn (naming-response conn')
+                                                  (fn [])
+                                                  (fn [ex] (println (ex-message ex)))))
+                                       1000))))
      :on-close   (fn [status] (binding [*connections* connections]
                                 (remove-connection! @conn)))
      :on-receive (fn [data] (binding [*connections* connections]
@@ -813,25 +835,19 @@
 
 (defn ping [conn] (send-for-response [conn] {:op :ping}))
 
-;; could make no-response behavior configurable
-(defn ping-thread [connections fwsid {:keys [interval
-                                             ping-timeout]
-                                      :or {interval 15000
-                                           ping-timeout 2000}}]
-  (doto (Thread.
-         (fn []
-           (loop []
-             (Thread/sleep interval)
-             (when-let [conn (get @connections fwsid)]
-               (if-not (try
-                         ;; TODO consider re-trying a couple times on failure
-                         (deref (ping conn) ping-timeout false)
-                         (catch Throwable e
-                           false))
-                 (swap! connections dissoc fwsid)
-                 (recur))))))
-    (.setDaemon true)
-    (.start)))
+(defn ping-task [connections fwsid {:keys [interval
+                                           ping-timeout]
+                                    :or {interval 15000
+                                         ping-timeout 2000}}]
+  (let [task (fn self []
+               (when-let [conn (get @connections fwsid)]
+                 (if-not (try
+                           (deref (ping conn) ping-timeout false)
+                           (catch Throwable e
+                             false))
+                   (swap! connections dissoc fwsid)
+                   (schedule-task! self interval))))]
+    (schedule-task! task interval)))
 
 ;; agents would be easier but heavier and agent clean up is harder
 (defn long-poll-send [comm-atom msg]
@@ -945,7 +961,7 @@
         ;; TODO a short ping-timeout could be a problem if an
         ;; env has a long running eval
         ;; this could reuse the eval timeout
-        (ping-thread *connections* fwsid {:interval 15000 :ping-timeout 2000}))
+        (ping-task *connections* fwsid {:interval 15000 :ping-timeout 800}))
       (let [conn (get @*connections* fwsid)]
         (if fwinit
           (do
@@ -965,14 +981,14 @@
 
 (defn asyc-http-polling-middleware [handler path connections]
   (fn [ring-request send raise]
-    #_(swap! scratch assoc :async-request ring-request)
-    (if-not (.startsWith (:uri ring-request) path)
-      (handler ring-request send raise)
+    (if (and (.startsWith (:uri ring-request) path)
+             (not (ws/upgrade-request? ring-request)))
       (binding [*connections* connections]
         (try
           (http-long-polling-endpoint ring-request send raise)
           (catch Throwable e
-            (raise e)))))))
+            (raise e))))
+      (handler ring-request send raise))))
 
 ;; ---------------------------------------------------
 ;; ReplEnv implmentation
@@ -993,10 +1009,13 @@
            (open-connections))))
 
 (defn wait-for-connection [repl-env]
-  (loop []
-    (when (empty? (connections-available repl-env))
-      (Thread/sleep 500)
-      (recur))))
+  (let [prom (promise)
+        task (fn self []
+               (if (empty? (connections-available repl-env))
+                 (schedule-task! self 500)
+                 (deliver prom true)))]
+    (task)
+    @prom))
 
 (defn send-for-eval [{:keys [focus-session-name ;; just here for consideration
                              broadcast] :as repl-env} connections js]
@@ -1281,23 +1300,15 @@
                               (select-keys (:ring-server-options repl-env) [:host :port]))))]
     (cond
       (:launch-js repl-env)
-      (let [launch-fn
-            (fn []
-              (launch-js
-               (:launch-js repl-env)
-               repl-env
-               {:output-to output-to
-                :open-url open-url
-                :output-dir output-dir
-                :target target}))]
-        (if-let [wait-ms (:open-url-wait-ms repl-env 1500)]
-          (doto (Thread.
-                 (fn []
-                   (Thread/sleep wait-ms)
-                   (launch-fn)))
-            (.setDaemon true)
-            (.start))
-          (launch-fn)))
+      (do
+        (wait! (:open-url-wait-ms repl-env 1500))
+        (launch-js
+         (:launch-js repl-env)
+         repl-env
+         {:output-to output-to
+          :open-url open-url
+          :output-dir output-dir
+          :target target}))
 
       ;; Node REPL
       (and (= :nodejs target)
@@ -1319,14 +1330,8 @@
         (open open-url)
         (do
           (println "Opening URL" open-url)
-          (if-let [wait-ms (:open-url-wait-ms repl-env 1500)]
-            (doto (Thread.
-                   (fn []
-                     (Thread/sleep wait-ms)
-                     (launch-browser open-url)))
-              (.setDaemon true)
-              (.start))
-            (launch-browser open-url))))
+          (schedule-task! #(launch-browser open-url)
+                          (:open-url-wait-ms repl-env 1500))))
       (and (nil? target)
            (not (:launch-js repl-env))
            (false? open-url))
