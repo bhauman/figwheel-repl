@@ -736,7 +736,7 @@
                                    :send-fn (fn [_ data]
                                               (send-fn data))})]
                        (vreset! conn conn')
-                       (future (Thread/sleep 10)
+                       (future (Thread/sleep 700)
                                (send-fn (naming-response conn')
                                         (fn [])
                                         (fn [ex] (println (ex-message ex))))))))
