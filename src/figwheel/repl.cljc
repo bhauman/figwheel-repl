@@ -329,7 +329,12 @@
                   response))))
 
            (defn respond-to [{:keys [http-url] :as old-msg} response-body]
-             (http-post http-url (pr-str (response-for old-msg response-body))))
+             (let [response (binding [*print-readably* true]
+                              ;; `pr-str` here can run inside `println`'s `*print-readably* false`
+                              ;; binding, which would emit unquoted strings and produce a message the
+                              ;; server cannot read back as EDN.
+                              (pr-str (response-for old-msg response-body)))]
+               (http-post http-url response)))
 
            (defn respond-to-connection [response-body]
              (respond-to (:connection @state) response-body))
